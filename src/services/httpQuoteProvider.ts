@@ -13,16 +13,13 @@ export class HttpQuoteProvider implements QuoteProvider {
     const uniqueSymbols = [...new Set(symbols)];
     if (uniqueSymbols.length === 0) return [];
 
-    const quotes = await Promise.all(
-      uniqueSymbols.map(async (symbol) => {
-        const url = new URL('/quote', this.baseUrl);
-        url.searchParams.set('symbol', symbol);
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Quote API request failed: ${response.status}`);
-        return (await response.json()) as QuoteApiResponse;
-      }),
-    );
+    const url = new URL('/quotes', this.baseUrl);
+    url.searchParams.set('symbols', uniqueSymbols.join(','));
 
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Quote API request failed: ${response.status}`);
+
+    const quotes = (await response.json()) as QuoteApiResponse[];
     return quotes.map((quote) => ({
       symbol: quote.symbol,
       name: quote.name ?? quote.symbol,
