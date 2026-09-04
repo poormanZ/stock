@@ -102,8 +102,7 @@ GitHub Pages deploy
 
 빌드 실패 시 배포하지 않는다.
 
-## 9. 폴더 구조 방향
-실제 프레임워크 결정 후 아래 개념을 유지한다.
+## 9. 폴더 구조
 
 ```text
 /
@@ -117,16 +116,21 @@ GitHub Pages deploy
 │  └─ styles/
 ├─ public/
 ├─ agent.md
-└─ README.md
+├─ index.html
+├─ package.json
+├─ tsconfig.json
+└─ vite.config.ts
 ```
 
 ## 10. 단계별 구현 계획
 
 ### Phase 0 — 기반
-- agent.md
-- 설계 문서
-- 웹 프레임워크 결정
-- GitHub Actions/Pages 기본 배포
+- [x] agent.md
+- [x] 설계 문서
+- [x] Vite + TypeScript 확정
+- [x] GitHub Actions/Pages 배포 워크플로 구성
+- [x] 최소 웹 진입점 구성
+- [ ] GitHub Pages 실제 배포 성공 확인
 
 ### Phase 1 — 정적 대시보드
 - 기본 레이아웃
@@ -157,8 +161,17 @@ GitHub Pages deploy
 - 테스트
 - 배포 자동화 안정화
 
-## 11. 초기 기술 선택 원칙
-프레임워크는 정적 GitHub Pages 배포와 잘 맞고, 컴포넌트 기반 UI 및 테스트가 쉬운 구성을 우선한다. Phase 0에서 하나를 확정한 뒤 프로젝트 생성과 CI를 진행한다.
+## 11. 초기 기술 선택
+**Vite + TypeScript**를 선택한다.
+
+선정 이유:
+- GitHub Pages 같은 정적 호스팅에 적합
+- 개발 서버와 프로덕션 빌드가 단순함
+- TypeScript로 주식 데이터 모델을 명확하게 유지할 수 있음
+- 별도 UI 프레임워크 없이도 작은 MVP를 빠르게 시작할 수 있음
+- 이후 필요하면 컴포넌트 계층을 확장할 수 있음
+
+초기에는 React 같은 추가 UI 프레임워크를 도입하지 않고 Vite + TypeScript + HTML/CSS로 시작해 의존성을 최소화한다.
 
 ## 12. MVP 완료 조건
 - 최소 5개 이상의 종목을 한 화면에서 동시에 볼 수 있다.
