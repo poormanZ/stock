@@ -1,0 +1,10 @@
+name = "stock-quote-api"
+main = "src/index.ts"
+compatibility_date = "2026-09-04"
+
+[vars]
+KIS_BASE_URL = "https://openapi.koreainvestment.com:9443"
+ALLOWED_ORIGIN = "https://poormanz.github.io"
+
+[secrets]
+required = ["KIS_APP_KEY", "KIS_APP_SECRET"]
