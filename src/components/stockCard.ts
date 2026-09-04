@@ -16,7 +16,10 @@ export function renderStockCard(quote: StockQuote): string {
           <h3>${quote.name}</h3>
           <p>${quote.symbol} · ${quote.market}</p>
         </div>
-        <span class="market-badge market-badge--${quote.marketStatus.toLowerCase()}">${quote.marketStatus}</span>
+        <div class="stock-card__actions">
+          <span class="market-badge market-badge--${quote.marketStatus.toLowerCase()}">${quote.marketStatus}</span>
+          <button class="remove-button" type="button" data-remove-symbol="${quote.symbol}" aria-label="${quote.name} 관심종목에서 삭제">×</button>
+        </div>
       </div>
       <div class="stock-card__price">${formatPrice.format(quote.price)}<span>원</span></div>
       <div class="stock-card__change" aria-label="전일 대비 ${sign}${formatPrice.format(quote.change)}원, ${sign}${quote.changePercent.toFixed(2)}퍼센트">
