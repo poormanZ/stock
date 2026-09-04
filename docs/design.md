@@ -91,12 +91,12 @@ UI
  ↓
 QuoteProvider
  ↓
-SampleQuoteProvider / 향후 실제 API Adapter
+SampleQuoteProvider / HttpQuoteProvider
  ↓
 StockQuote[]
 ```
 
-현재 `SampleQuoteProvider`가 샘플 카탈로그를 동일한 `QuoteProvider` 계약으로 제공한다. 새로고침도 Provider 호출을 통해 시세를 가져오도록 구성했다. UI는 Provider의 구현 세부사항을 알지 않는다.
+`SampleQuoteProvider`는 샘플 카탈로그를 동일한 `QuoteProvider` 계약으로 제공한다. 실제 모드에서는 `HttpQuoteProvider`가 서버리스 `/quotes` 엔드포인트를 통해 여러 종목을 한 번에 조회한다.
 
 ### 실제 API 연결 전 확인 항목
 - 정적 GitHub Pages에서 직접 호출 가능한지
@@ -107,6 +107,15 @@ StockQuote[]
 - 실시간/지연 시세 제공 범위
 - 국내 시장 및 종목 코드 지원 여부
 - 데이터 사용 약관 및 재배포 조건
+
+### 서버리스 Proxy
+GitHub Pages는 정적 호스팅이므로 KIS Appsecret은 브라우저에 배포하지 않는다. Cloudflare Worker가 KIS 인증과 현재가 조회를 담당하고, 프론트엔드는 필요한 시세 데이터만 받는다.
+
+현재 Worker는 다음 엔드포인트를 제공한다.
+- `GET /quote?symbol=005930`: 단일 종목 호환 API
+- `GET /quotes?symbols=005930,000660,...`: 최대 20종목 일괄 조회
+- KIS Access Token은 Worker 실행 인스턴스에서 캐시하고 동시 토큰 발급 요청을 합친다.
+- KIS 인증정보는 Worker Secret으로만 주입한다.
 
 ## 8. 배포
 GitHub Actions에서 다음 파이프라인을 기본으로 한다.
@@ -123,21 +132,27 @@ GitHub Pages deploy
 
 빌드 실패 시 배포하지 않는다.
 
+실제 시세 서비스는 별도의 Cloudflare Worker 배포가 필요하다.
+
 ## 9. 폴더 구조
 
 ```text
 /
 ├─ .github/workflows/
 ├─ docs/
+├─ workers/
+│  └─ quote-api/
+│     ├─ src/index.ts
+│     └─ wrangler.toml
 ├─ src/
 │  ├─ components/
 │  ├─ data/
 │  ├─ services/
 │  │  ├─ quoteProvider.ts
-│  │  └─ sampleQuoteProvider.ts
+│  │  ├─ sampleQuoteProvider.ts
+│  │  └─ httpQuoteProvider.ts
 │  ├─ types/
 │  └─ styles/
-├─ public/
 ├─ agent.md
 ├─ index.html
 ├─ package.json
@@ -179,8 +194,13 @@ GitHub Pages deploy
 - [x] 새로고침을 Provider 호출 흐름으로 전환
 - [x] 로딩 상태 표시
 - [x] Provider 오류 상태 표시
-- [ ] 실제 API 어댑터
-- [ ] 실제 데이터 연결
+- [x] 실제 API 어댑터
+- [x] 서버리스 KIS Proxy 초안
+- [x] 다중 종목 일괄 조회 및 Access Token 캐시
+- [ ] KIS 계정/앱키 발급 및 Worker Secret 설정
+- [ ] Cloudflare Worker 실제 배포
+- [ ] GitHub Pages에서 Worker 연결 설정
+- [ ] 실제 API 엔드포인트 통합 검증
 - [ ] 실제 API의 지연/오류 정책 확정
 
 ### Phase 4 — 차트/분석
