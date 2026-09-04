@@ -83,12 +83,30 @@ StockQuote
 ## 7. 데이터 연동 전략
 MVP 개발 순서는 `샘플 데이터 → 실제 API 추상화 → 실제 데이터 연결`로 한다.
 
-이유:
-- 외부 API 없이도 UI를 먼저 검증할 수 있음
-- API 키가 필요한 경우 비밀값을 브라우저에 노출하지 않는 구조를 검토할 수 있음
-- 공급자 변경 시 UI를 다시 작성하지 않아도 됨
+### QuoteProvider
+UI는 특정 API에 직접 의존하지 않는다.
 
-정적 GitHub Pages만으로 직접 호출 가능한 공개 API인지, CORS/요금/호출 제한/약관을 확인한 뒤 실제 공급자를 결정한다.
+```text
+UI
+ ↓
+QuoteProvider
+ ↓
+SampleQuoteProvider / 향후 실제 API Adapter
+ ↓
+StockQuote[]
+```
+
+현재 `SampleQuoteProvider`가 샘플 카탈로그를 동일한 `QuoteProvider` 계약으로 제공한다. 새로고침도 Provider 호출을 통해 시세를 가져오도록 구성했다. UI는 Provider의 구현 세부사항을 알지 않는다.
+
+### 실제 API 연결 전 확인 항목
+- 정적 GitHub Pages에서 직접 호출 가능한지
+- CORS 지원 여부
+- API 키가 필요한지
+- 브라우저에 비밀값이 노출되지 않는 구조인지
+- 무료/유료 요금 및 호출 제한
+- 실시간/지연 시세 제공 범위
+- 국내 시장 및 종목 코드 지원 여부
+- 데이터 사용 약관 및 재배포 조건
 
 ## 8. 배포
 GitHub Actions에서 다음 파이프라인을 기본으로 한다.
@@ -115,6 +133,8 @@ GitHub Pages deploy
 │  ├─ components/
 │  ├─ data/
 │  ├─ services/
+│  │  ├─ quoteProvider.ts
+│  │  └─ sampleQuoteProvider.ts
 │  ├─ types/
 │  └─ styles/
 ├─ public/
@@ -153,11 +173,15 @@ GitHub Pages deploy
 - [x] 잘못된 검색/중복 추가 피드백
 - [x] 카드별 삭제 버튼
 
-### Phase 3 — 실제 데이터
-- QuoteProvider 인터페이스
-- API 어댑터
-- 데이터 갱신
-- 지연/오류 처리
+### Phase 3 — 실제 데이터 기반
+- [x] QuoteProvider 인터페이스
+- [x] SampleQuoteProvider 구현
+- [x] 새로고침을 Provider 호출 흐름으로 전환
+- [x] 로딩 상태 표시
+- [x] Provider 오류 상태 표시
+- [ ] 실제 API 어댑터
+- [ ] 실제 데이터 연결
+- [ ] 실제 API의 지연/오류 정책 확정
 
 ### Phase 4 — 차트/분석
 - 종목별 가격 차트
