@@ -21,6 +21,10 @@ type KISQuoteResponse = {
 const DEFAULT_BASE_URL = 'https://openapi.koreainvestment.com:9443';
 const TOKEN_PATH = '/oauth2/tokenP';
 const QUOTE_PATH = '/uapi/domestic-stock/v1/quotations/inquire-price';
+const TOKEN_TTL_MS = 20 * 60 * 1000;
+
+let cachedToken: { value: string; expiresAt: number } | null = null;
+let tokenPromise: Promise<string> | null = null;
 
 function json(data: unknown, status = 200, origin = '*'): Response {
   return new Response(JSON.stringify(data), {
@@ -35,7 +39,7 @@ function json(data: unknown, status = 200, origin = '*'): Response {
   });
 }
 
-async function getAccessToken(env: Env, baseUrl: string): Promise<string> {
+async function requestAccessToken(env: Env, baseUrl: string): Promise<string> {
   const response = await fetch(`${baseUrl}${TOKEN_PATH}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json; charset=utf-8' },
@@ -49,7 +53,19 @@ async function getAccessToken(env: Env, baseUrl: string): Promise<string> {
   if (!response.ok) throw new Error(`KIS token request failed: ${response.status}`);
   const body = (await response.json()) as { access_token?: string };
   if (!body.access_token) throw new Error('KIS access token was not returned');
+
+  cachedToken = { value: body.access_token, expiresAt: Date.now() + TOKEN_TTL_MS };
   return body.access_token;
+}
+
+async function getAccessToken(env: Env, baseUrl: string): Promise<string> {
+  if (cachedToken && cachedToken.expiresAt > Date.now()) return cachedToken.value;
+  if (!tokenPromise) {
+    tokenPromise = requestAccessToken(env, baseUrl).finally(() => {
+      tokenPromise = null;
+    });
+  }
+  return tokenPromise;
 }
 
 function toNumber(value: string | undefined): number {
@@ -94,6 +110,14 @@ async function getQuote(env: Env, symbol: string): Promise<unknown> {
   };
 }
 
+async function getQuotes(env: Env, symbols: string[]): Promise<unknown[]> {
+  return Promise.all(symbols.map((symbol) => getQuote(env, symbol)));
+}
+
+function parseSymbols(value: string | null): string[] {
+  return [...new Set((value ?? '').split(',').map((symbol) => symbol.trim()).filter(Boolean))];
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const origin = env.ALLOWED_ORIGIN || '*';
@@ -102,14 +126,21 @@ export default {
     if (request.method !== 'GET') return json({ error: 'METHOD_NOT_ALLOWED' }, 405, origin);
 
     const url = new URL(request.url);
-    if (url.pathname !== '/quote') return json({ error: 'NOT_FOUND' }, 404, origin);
+    if (url.pathname !== '/quote' && url.pathname !== '/quotes') return json({ error: 'NOT_FOUND' }, 404, origin);
 
-    const symbol = url.searchParams.get('symbol') ?? '';
-    if (!/^\d{6}$/.test(symbol)) return json({ error: 'INVALID_SYMBOL' }, 400, origin);
+    const symbols = url.pathname === '/quote'
+      ? parseSymbols(url.searchParams.get('symbol'))
+      : parseSymbols(url.searchParams.get('symbols'));
+
+    if (symbols.length === 0 || symbols.length > 20 || symbols.some((symbol) => !/^\d{6}$/.test(symbol))) {
+      return json({ error: 'INVALID_SYMBOLS' }, 400, origin);
+    }
 
     try {
-      return json(await getQuote(env, symbol), 200, origin);
+      const quotes = await getQuotes(env, symbols);
+      return json(url.pathname === '/quote' ? quotes[0] : quotes, 200, origin);
     } catch {
+      cachedToken = null;
       return json({ error: 'QUOTE_UNAVAILABLE' }, 502, origin);
     }
   },
