@@ -44,10 +44,16 @@ export class KISTokenBroker extends DurableObject<TokenBrokerEnv> {
   private issuePromise: Promise<TokenCacheRecord> | null = null;
 
   async fetch(request: Request): Promise<Response> {
-    if (request.method !== 'GET') return new Response('Method Not Allowed', { status: 405 });
+    if (request.method !== 'GET' && request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
 
     const baseUrl = getBaseUrl(this.env);
     const key = `kis-access-token:${baseUrl}`;
+
+    if (request.method === 'POST') {
+      await this.env.KIS_TOKEN_CACHE.delete(key);
+      return Response.json({ invalidated: true });
+    }
+
     const cached = await this.env.KIS_TOKEN_CACHE.get<TokenCacheRecord>(key, 'json');
     if (cached && cached.accessToken && cached.expiresAt > Date.now()) {
       return Response.json(cached);
