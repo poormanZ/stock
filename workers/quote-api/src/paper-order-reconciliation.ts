@@ -1,4 +1,4 @@
-import type { Order } from './order-domain';
+import { transitionOrder, type Order } from './order-domain';
 import type { OrderRecord } from './kis-order-adapter';
 
 export interface PaperOrderResyncResult {
@@ -11,6 +11,9 @@ export interface PaperOrderResyncResult {
  * Merge broker order/filled state into internal Order records.
  * Only orders that already have a brokerOrderId are updated; KIS-only orders
  * remain unresolved so the caller can handle them through reconciliation.
+ *
+ * State changes are applied through the Order state machine so a broker
+ * response cannot silently create an illegal internal transition.
  */
 export function resyncPaperOrders(internalOrders: Order[], brokerOrders: OrderRecord[]): PaperOrderResyncResult {
   const brokerById = new Map(brokerOrders.filter((order) => order.brokerOrderId).map((order) => [order.brokerOrderId, order]));
@@ -28,13 +31,11 @@ export function resyncPaperOrders(internalOrders: Order[], brokerOrders: OrderRe
     if (!changed) return order;
 
     updated += 1;
-    return {
-      ...order,
-      status: nextStatus,
-      executedQuantity,
-      averageExecutedPrice,
-      updatedAt: new Date().toISOString(),
-    };
+    if (order.status === nextStatus) {
+      return transitionOrder(order, nextStatus, { executedQuantity, averageExecutedPrice });
+    }
+
+    return transitionOrder(order, nextStatus, { executedQuantity, averageExecutedPrice });
   });
 
   const knownIds = new Set(internalOrders.map((order) => order.brokerOrderId).filter(Boolean));
