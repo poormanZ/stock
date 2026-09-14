@@ -15,7 +15,13 @@
 - [x] DRY_RUN 가상 현금/포지션/주문 시뮬레이터
 - [x] DRY_RUN reconciliation Gate 강제 연결
 - [x] GitHub Pages용 시세/계좌/DRY_RUN 주문 통합 UI
-- [ ] 위험관리 및 Kill Switch
+- [x] 종목별 최대 수량/주문금액 Risk Manager
+- [x] 전체 포지션 한도 Risk Manager
+- [x] 일일 주문 횟수/손실 한도 Risk Manager
+- [x] 시세 지연/누락 차단
+- [x] API 장애/계좌 불일치 주문 차단
+- [x] 긴급 정지(Kill Switch) Durable Object 저장
+- [x] DRY_RUN 주문 경로 Risk Manager 연결
 - [ ] 모의투자 주문
 - [ ] 전략/백테스트
 - [ ] 실계좌 주문
@@ -70,14 +76,15 @@
 - [x] GitHub Pages DRY_RUN 주문 UI
 
 ## Phase 6 — 위험관리 / Kill Switch
-- [ ] 종목별 최대 수량/주문금액
-- [ ] 전체 포지션 한도
-- [ ] 일일 주문 횟수/손실 한도
-- [ ] 시세 지연/누락 차단
-- [ ] API 장애 차단
-- [ ] 계좌 불일치 차단
-- [ ] 긴급 정지 상태 저장
-- [ ] 모든 주문 경로가 Risk Manager를 통과하도록 보장
+- [x] 종목별 최대 수량/주문금액
+- [x] 전체 포지션 한도
+- [x] 일일 주문 횟수/손실 한도
+- [x] 시세 지연/누락 차단
+- [x] API 장애 차단
+- [x] 계좌 불일치 차단
+- [x] 긴급 정지 상태 저장
+- [x] 모든 DRY_RUN 주문 경로가 Risk Manager를 통과하도록 보장
+- [ ] PAPER 주문 경로에도 동일 Risk Manager 연결
 
 ## Phase 7 — 모의투자 자동매매
 - [ ] 모의투자 주문 Adapter
@@ -134,6 +141,6 @@
 
 ## 현재 다음 작업
 
-**Phase 6 — Risk Manager + Kill Switch**.
+**Phase 7 — 모의투자 주문 Adapter**.
 
 원칙은 `주문 형식 검증 → reconciliation Gate → Risk Manager → DRY_RUN/PAPER 주문` 순서이며, 실제 KIS LIVE 주문 API는 안전장치가 모두 검증될 때까지 추가하지 않는다.
