@@ -18,7 +18,7 @@ export interface ReconciliationState {
 }
 
 export interface ReconciliationDifference {
-  type: 'POSITION_QUANTITY_MISMATCH' | 'MISSING_INTERNAL_POSITION' | 'UNEXPECTED_INTERNAL_POSITION' | 'ORDER_STATUS_MISMATCH';
+  type: 'POSITION_QUANTITY_MISMATCH' | 'MISSING_INTERNAL_POSITION' | 'UNEXPECTED_INTERNAL_POSITION' | 'ORDER_STATUS_MISMATCH' | 'MISSING_INTERNAL_ORDER' | 'UNEXPECTED_INTERNAL_ORDER';
   symbol?: string;
   brokerOrderId?: string;
   message: string;
@@ -38,24 +38,20 @@ export function reconcile(kis: ReconciliationState, internal: ReconciliationStat
   const differences: ReconciliationDifference[] = [];
   const kisPositions = positionMap(kis.positions);
   const internalPositions = positionMap(internal.positions);
-
   for (const [symbol, quantity] of kisPositions) {
     const internalQuantity = internalPositions.get(symbol);
     if (internalQuantity === undefined) differences.push({ type: 'MISSING_INTERNAL_POSITION', symbol, message: `KIS position ${symbol} is missing from internal state` });
     else if (internalQuantity !== quantity) differences.push({ type: 'POSITION_QUANTITY_MISMATCH', symbol, message: `Position ${symbol} quantity differs: KIS=${quantity}, internal=${internalQuantity}` });
   }
-  for (const symbol of internalPositions.keys()) {
-    if (!kisPositions.has(symbol)) differences.push({ type: 'UNEXPECTED_INTERNAL_POSITION', symbol, message: `Internal position ${symbol} is not present at KIS` });
-  }
+  for (const symbol of internalPositions.keys()) if (!kisPositions.has(symbol)) differences.push({ type: 'UNEXPECTED_INTERNAL_POSITION', symbol, message: `Internal position ${symbol} is not present at KIS` });
 
   const kisOrders = new Map(kis.orders.filter((order) => order.brokerOrderId).map((order) => [order.brokerOrderId, order]));
   const internalOrders = new Map(internal.orders.filter((order) => order.brokerOrderId).map((order) => [order.brokerOrderId, order]));
   for (const [brokerOrderId, kisOrder] of kisOrders) {
     const internalOrder = internalOrders.get(brokerOrderId);
-    if (internalOrder && (internalOrder.status !== kisOrder.status || internalOrder.executedQuantity !== kisOrder.executedQuantity)) {
-      differences.push({ type: 'ORDER_STATUS_MISMATCH', brokerOrderId, message: `Order ${brokerOrderId} state differs: KIS=${kisOrder.status}/${kisOrder.executedQuantity}, internal=${internalOrder.status}/${internalOrder.executedQuantity}` });
-    }
+    if (!internalOrder) differences.push({ type: 'MISSING_INTERNAL_ORDER', brokerOrderId, symbol: kisOrder.symbol, message: `KIS order ${brokerOrderId} is missing from internal state` });
+    else if (internalOrder.status !== kisOrder.status || internalOrder.executedQuantity !== kisOrder.executedQuantity) differences.push({ type: 'ORDER_STATUS_MISMATCH', brokerOrderId, message: `Order ${brokerOrderId} state differs: KIS=${kisOrder.status}/${kisOrder.executedQuantity}, internal=${internalOrder.status}/${internalOrder.executedQuantity}` });
   }
-
+  for (const [brokerOrderId, internalOrder] of internalOrders) if (!kisOrders.has(brokerOrderId)) differences.push({ type: 'UNEXPECTED_INTERNAL_ORDER', brokerOrderId, symbol: internalOrder.symbol, message: `Internal order ${brokerOrderId} is not present at KIS` });
   return { status: differences.length === 0 ? 'MATCHED' : 'MISMATCHED', canPlaceNewOrders: differences.length === 0, differences };
 }

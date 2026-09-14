@@ -29,7 +29,9 @@
 - [x] 읽기 전용 `/orders` 국내주식 주문/체결내역 조회 연결
 - [x] reconciliation 비교 모델 및 신규주문 차단 판정 로직
 - [x] `Order` 도메인 모델 및 상태 전이 검증
-- [ ] 내부 주문/포지션 상태 저장소 연결
+- [x] Durable Object 기반 내부 주문/포지션 상태 저장소
+- [x] `/reconciliation` 실제 KIS 조회 ↔ 내부 상태 비교 연결
+- [x] KIS/내부 주문 누락도 불일치로 판정
 - [ ] 불일치 경고 및 신규주문 차단을 실제 주문 경로에 연결
 - [ ] DRY_RUN 주문 시뮬레이터
 - [ ] 위험관리 및 Kill Switch
@@ -78,7 +80,8 @@
 - [x] 실제 국내 주문가능 현금 0원 상태 검증
 - [x] `inquire-daily-ccld` 기반 읽기 전용 `/orders` 연결
 - [x] KIS 포지션/주문과 내부 상태를 비교하는 순수 reconciliation 모델
-- [ ] 내부 상태 저장소 연결
+- [x] Durable Object 내부 상태 저장소 연결
+- [x] `/reconciliation`에서 KIS 상태와 내부 상태 비교
 - [ ] 불일치 시 신규 주문 차단을 실제 주문 경로에 연결
 
 ### Phase 4 — 주문 도메인
@@ -93,16 +96,6 @@
 - [x] 거부/취소/알 수 없음 상태 전이 정의
 - [x] `UNKNOWN → RECONCILING` 상태 전이 정의
 - [ ] 주문 상태 재동기화
-
-권장 상태:
-
-```text
-CREATED → SUBMITTING → SUBMITTED → ACCEPTED → PARTIALLY_FILLED → FILLED
-SUBMITTED/ACCEPTED → CANCELED
-SUBMITTING/SUBMITTED → REJECTED
-모든 외부 호출 → UNKNOWN 가능
-UNKNOWN → RECONCILING → 실제 상태 확정
-```
 
 ### Phase 5 — DRY_RUN 시뮬레이터
 - [ ] 가상 현금/보유 포지션
@@ -188,15 +181,16 @@ UNKNOWN → RECONCILING → 실제 상태 확정
 4. `/orders` — 국내주식 주문/체결 내역
 5. reconciliation — KIS 상태와 내부 상태의 차이를 계산하고 신규 주문 가능 여부를 판정
 6. Order domain — KIS와 독립적인 주문 상태/전이 계약
+7. Internal State Store — Durable Object로 내부 상태를 영속 저장
 
 현재 실제 계좌는 국내 현금과 국내주식 보유가 0이고 해외 달러 자산만 존재하므로, `/buyable`의 국내 주문가능 현금 0원은 정상적인 상태다. 해외 자산 총액을 국내 주문가능 현금으로 간주하지 않는다.
 
 다음 구현 단위:
 
-1. 내부 주문/포지션 상태 저장소 구축
-2. KIS 조회 결과와 내부 상태를 reconciliation에 연결
-3. `MISMATCHED` 상태에서는 신규 주문을 자동 차단
-4. DRY_RUN 주문 시뮬레이터 구현
+1. `MISMATCHED` 상태를 신규 주문 경로의 실제 Gate로 연결
+2. DRY_RUN 주문 시뮬레이터 구현
+3. 위험관리 및 Kill Switch
+4. 모의투자 주문 Adapter
 5. 실제 주문 API는 모의투자 + DRY_RUN + Risk Gate 이후에만 추가
 
 ## 5. 완료 판정

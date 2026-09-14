@@ -3,24 +3,27 @@ main = "src/index.ts"
 compatibility_date = "2026-09-04"
 
 [vars]
-# 실계좌 연동 환경. 주문 기능은 별도 단계에서 안전장치를 확인한 뒤 활성화한다.
 KIS_ENVIRONMENT = "LIVE"
 ALLOWED_ORIGIN = "https://poormanz.github.io"
 
-# 국내주식 위탁계좌 기준: 앞 8자리(CANO) + 계좌상품코드 01.
 [secrets]
 required = ["APP_KEY", "APP_SECRET", "ACCOUNT_CANO", "ACCOUNT_PRODUCT_CODE"]
 
-# Access Token 영속 캐시.
-# ID를 생략하면 Wrangler가 배포 시 KV 리소스를 자동 프로비저닝한다.
 [[kv_namespaces]]
 binding = "KIS_TOKEN_CACHE"
 
-# Access Token 발급의 전역 동시성 제어.
 [[durable_objects.bindings]]
 name = "KIS_TOKEN_BROKER"
 class_name = "KISTokenBroker"
 
+[[durable_objects.bindings]]
+name = "INTERNAL_STATE_STORE"
+class_name = "InternalStateStoreDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["KISTokenBroker"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["InternalStateStoreDO"]
