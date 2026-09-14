@@ -14,6 +14,7 @@ export class KISHttpError extends Error {
     public readonly code: KISHttpErrorCode,
     message: string,
     public readonly status?: number,
+    public readonly upstreamCode?: string,
   ) {
     super(message);
     this.name = 'KISHttpError';
@@ -37,8 +38,8 @@ type KISTokenResponse = {
 };
 
 type CachedToken = { value: string; expiresAt: number; baseUrl: string };
-
 type BrokerTokenResponse = { accessToken?: string; expiresAt?: number; error?: string };
+type KISRejectedResponse = { msg_cd?: string; msg1?: string; rt_cd?: string };
 
 export interface KISJsonResponse<T> {
   data: T;
@@ -72,6 +73,15 @@ function toExpiry(value?: string): number {
   return Number.isFinite(parsed)
     ? Math.max(Date.now() + TOKEN_SAFETY_MARGIN_MS, parsed - TOKEN_SAFETY_MARGIN_MS)
     : Date.now() + 6 * 60 * 60 * 1000;
+}
+
+async function readRejectedResponse(response: Response): Promise<KISRejectedResponse> {
+  try {
+    const body = (await response.json()) as KISRejectedResponse;
+    return body ?? {};
+  } catch {
+    return {};
+  }
 }
 
 export class KISHttpClient {
@@ -174,8 +184,9 @@ export class KISHttpClient {
     });
 
     if (!response.ok) {
+      const body = await readRejectedResponse(response);
       const code = response.status === 429 ? 'KIS_RATE_LIMITED' : 'KIS_AUTH_FAILED';
-      throw new KISHttpError(code, 'KIS access token request was rejected', response.status);
+      throw new KISHttpError(code, 'KIS access token request was rejected', response.status, body.msg_cd);
     }
 
     let body: KISTokenResponse;
@@ -226,11 +237,13 @@ export class KISHttpClient {
         }
       }
 
+      const rejected = await readRejectedResponse(response);
       const retryable = response.status === 429 || response.status >= 500;
       lastError = new KISHttpError(
         response.status === 429 ? 'KIS_RATE_LIMITED' : 'KIS_UPSTREAM_ERROR',
-        'KIS API request was rejected',
+        rejected.msg1 ? `KIS API request was rejected: ${rejected.msg1}` : 'KIS API request was rejected',
         response.status,
+        rejected.msg_cd,
       );
       if (!retryable || attempt === 2) throw lastError;
       await sleep(Math.max(this.minRequestIntervalMs, 500 * (attempt + 1)));
