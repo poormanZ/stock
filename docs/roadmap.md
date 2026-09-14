@@ -58,7 +58,9 @@
 - [x] 장 상태/데이터 시각 처리 기반 (`asOf` 날짜+체결시각 매핑)
 - [x] stale/missing 데이터 정책 정의
 - [x] Cloudflare Worker 배포
-- [ ] GitHub Pages → Worker 연동
+- [ ] GitHub Pages → Worker 연동 및 실제 Pages 배포 검증
+- [x] 프론트엔드 실시간 Worker 호출 코드
+- [x] stale/missing 상태 UI
 - [x] 실제 KIS 시세 통합 테스트
 
 ### Phase 3 — 계좌/잔고/포지션
@@ -203,22 +205,17 @@ UNKNOWN → RECONCILING → 실제 상태 확정
 
 ## 4. 현재 다음 작업
 
-**Phase 2 — 시세 서비스 안정화**로 진행한다.
+**Phase 2 — 시세 서비스 안정화**를 마무리한다.
 
-현재 Worker는 사용자가 설정한 `APP_KEY` / `APP_SECRET`을 서버 측 Secret으로 사용하고, `KIS_ENVIRONMENT=PAPER`를 기본값으로 하여 모의투자 REST 도메인을 선택한다. `LIVE`는 코드상 지원하지만 기본값이 아니다.
+현재 Worker는 `APP_KEY` / `APP_SECRET`을 서버 측 Secret으로 사용하고, `KIS_ENVIRONMENT=PAPER`를 기본값으로 하여 모의투자 REST 도메인을 선택한다. `LIVE`는 코드상 지원하지만 기본값이 아니다.
 
-완료된 항목:
-
-1. 인증정보 로그 마스킹 테스트 및 CI 검증
-2. `/quote`, `/quotes` 응답 계약 정의
-3. stale/missing 데이터 정책 정의
-4. KIS 오류를 브라우저에 노출하지 않는 오류 계약 유지
+이번 구현으로 프론트엔드는 공개 Worker URL만 사용하고, KIS 인증정보는 브라우저에 전달하지 않는다. Vite 빌드와 GitHub Pages 배포 Workflow도 추가했으며, 실제 Pages 배포 성공 여부를 확인하는 것이 남아 있다.
 
 다음 구현 단위:
 
-1. GitHub Pages → Worker 연동
-2. 프론트엔드 실시간 시세 표시 및 stale/missing 상태 UI
-3. Phase 2 시세 서비스 안정화 완료 검증
+1. GitHub Actions에서 Pages 빌드/배포 성공 검증
+2. 실제 Pages에서 KIS Worker 시세 표시 검증
+3. Phase 2 완료 판정
 4. 계좌/잔고 읽기 전용 모델로 진행
 
 ## 5. 완료 판정
