@@ -16,12 +16,19 @@
 - [x] 프로젝트 목표를 KIS 자동매매 시스템으로 재정의
 - [x] `agent.md` 자동매매 개발 지침 작성
 - [x] 기존 Vite + TypeScript 대시보드 유지
-- [x] Cloudflare Worker 기반 KIS 시세 Proxy 초안 존재
-- [x] KIS Access Token 캐시 구조 존재
+- [x] Cloudflare Worker 기반 KIS 시세 Proxy
+- [x] KIS Access Token 캐시/24시간 재사용 구조
 - [x] 전체 자동매매 아키텍처 문서 정비
 - [x] KIS Worker Secret 이름을 `APP_KEY` / `APP_SECRET`으로 표준화
 - [x] 계좌 Secret 이름을 `ACCOUNT_NUM`으로 표준화
 - [x] 실제 KIS 시세 연결 검증
+- [x] 국내 위탁계좌 상품코드 `01` 적용
+- [x] `/account` 실제 LIVE 계좌 조회 연결
+- [x] `/account/assets` 실제 LIVE 자산 조회 연결
+- [x] `/buyable` 실제 LIVE 국내주식 매수가능 조회 연결
+- [x] 읽기 전용 `/orders` 국내주식 주문/체결내역 조회 연결
+- [ ] KIS 실제 상태와 내부 상태 비교(reconciliation)
+- [ ] 불일치 경고 및 신규주문 차단
 - [ ] 주문 도메인 및 주문 상태 모델
 - [ ] DRY_RUN 주문 시뮬레이터
 - [ ] 위험관리 및 Kill Switch
@@ -36,42 +43,39 @@
 - [x] `docs/design.md` 작성
 - [x] `docs/api-strategy.md` 작성
 - [x] `docs/roadmap.md` 작성
-- [x] README를 현재 프로젝트 목적에 맞게 갱신
+- [x] README 갱신
 
 ### Phase 1 — KIS 인증/어댑터 표준화
-목표: KIS 외부 API와 내부 도메인을 분리한다.
-
-- [x] KIS 환경 구분: `PAPER` / `LIVE`
-- [x] App Key / App Secret Secret 주입 구조 확정 (`APP_KEY`, `APP_SECRET`)
-- [x] Access Token 발급·캐시·만료 처리 강화
-- [x] KIS API 공통 HTTP 클라이언트
+- [x] `PAPER` / `LIVE` 환경 분리
+- [x] `APP_KEY` / `APP_SECRET` Secret 주입
+- [x] Access Token 발급·캐시·만료 처리
+- [x] 공통 HTTP 클라이언트
 - [x] 국내주식 시세 Adapter
-- [x] KIS 오류 응답의 내부 오류 모델 변환
+- [x] KIS 오류 응답 변환
 - [x] timeout / retry / rate-limit 정책
 - [x] 인증정보 로그 마스킹 테스트
 
 ### Phase 2 — 시세 서비스 안정화
-목표: 실제 시세를 안전하게 조회하고 UI에 제공한다.
-
 - [x] `/quote`, `/quotes` 계약 확정
 - [x] 종목 코드 검증
 - [x] KIS 시세 응답 검증 및 변환
-- [x] 장 상태/데이터 시각 처리 기반 (`asOf` 날짜+체결시각 매핑)
-- [x] stale/missing 데이터 정책 정의
+- [x] `asOf` 및 stale/missing 정책
 - [x] Cloudflare Worker 배포
-- [x] GitHub Pages → Worker 연동 및 실제 Pages 배포 Workflow 성공 검증
-- [x] 프론트엔드 실시간 Worker 호출 코드
-- [x] stale/missing 상태 UI
+- [x] GitHub Pages → Worker 연동
+- [x] 프론트엔드 Worker 호출
 - [x] 실제 KIS 시세 통합 테스트
 
 ### Phase 3 — 계좌/잔고/포지션
 목표: 실제 계좌 상태를 읽기 전용으로 정확하게 모델링한다.
 
-- [x] 계좌 조회 Adapter — `inquire-balance` (`TTTC8434R` / `VTTC8434R`)
-- [x] 예수금/정산금액 모델 — 예수금, D+1, D+2 및 평가/순자산 반영
+- [x] `inquire-balance` (`TTTC8434R` / `VTTC8434R`)
+- [x] 예수금/정산금액/평가/순자산 모델
 - [x] 보유 종목/수량/평균단가 모델
 - [x] 서버 기준 포지션 모델
-- [x] 종목별 매수가능금액/수량 Adapter — `inquire-psbl-order` (`TTTC8908R` / `VTTC8908R`)
+- [x] `inquire-psbl-order` (`TTTC8908R` / `VTTC8908R`)
+- [x] 실제 LIVE 계좌 조회 검증
+- [x] 실제 국내 주문가능 현금 0원 상태 검증
+- [x] `inquire-daily-ccld` 기반 읽기 전용 `/orders` 연결
 - [ ] KIS 실제 상태와 내부 상태 비교
 - [ ] 불일치 경고 및 신규주문 차단
 
@@ -90,13 +94,7 @@
 권장 상태:
 
 ```text
-CREATED
-  → SUBMITTING
-  → SUBMITTED
-  → ACCEPTED
-  → PARTIALLY_FILLED
-  → FILLED
-
+CREATED → SUBMITTING → SUBMITTED → ACCEPTED → PARTIALLY_FILLED → FILLED
 SUBMITTED/ACCEPTED → CANCELED
 SUBMITTING/SUBMITTED → REJECTED
 모든 외부 호출 → UNKNOWN 가능
@@ -104,24 +102,17 @@ UNKNOWN → RECONCILING → 실제 상태 확정
 ```
 
 ### Phase 5 — DRY_RUN 시뮬레이터
-목표: 실제 KIS 주문 없이 전체 자동매매 흐름을 검증한다.
-
 - [ ] 가상 현금/보유 포지션
-- [ ] 시장가/지정가 시뮬레이션 규칙
-- [ ] 수수료/세금/슬리피지 설정
+- [ ] 시장가/지정가 시뮬레이션
+- [ ] 수수료/세금/슬리피지
 - [ ] 체결/부분체결 시뮬레이션
-- [ ] 주문 이력
-- [ ] 재시작 후 상태 복구
+- [ ] 주문 이력 및 재시작 복구
 - [ ] 실제 주문 Adapter와 동일한 내부 계약 사용
 
 ### Phase 6 — 위험관리 / Kill Switch
-목표: 전략이 주문을 생성하더라도 위험관리 계층에서 최종 차단할 수 있게 한다.
-
-- [ ] 종목별 최대 수량
-- [ ] 종목별 최대 주문금액
+- [ ] 종목별 최대 수량/주문금액
 - [ ] 전체 포지션 한도
-- [ ] 일일 주문 횟수 제한
-- [ ] 일일 손실 한도
+- [ ] 일일 주문 횟수/손실 한도
 - [ ] 시세 지연/누락 차단
 - [ ] API 장애 차단
 - [ ] 계좌 불일치 차단
@@ -129,61 +120,43 @@ UNKNOWN → RECONCILING → 실제 상태 확정
 - [ ] 모든 주문 경로가 Risk Manager를 통과하도록 보장
 
 ### Phase 7 — 모의투자 자동매매
-목표: KIS 모의투자 계좌에서 실제 API 주문 흐름을 검증한다.
-
 - [ ] 모의투자 주문 Adapter
 - [ ] 주문/체결 조회
 - [ ] 실계좌와 모의계좌 환경 분리 검증
 - [ ] 장 운영시간 처리
-- [ ] 주문 실패/부분체결/취소 복구
+- [ ] 실패/부분체결/취소 복구
 - [ ] 일정 기간 안정성 검증
 
 ### Phase 8 — 전략 엔진 / 백테스트
-목표: 전략과 주문 인프라를 분리하고 반복 검증한다.
-
 - [ ] Strategy 인터페이스
-- [ ] 진입 조건
-- [ ] 청산 조건
+- [ ] 진입/청산 조건
 - [ ] 포지션 사이징
 - [ ] 손절/익절 규칙
-- [ ] 과거 데이터 기반 백테스트
+- [ ] 과거 데이터 백테스트
 - [ ] 수수료/세금/슬리피지 반영
-- [ ] 수익률/승률/최대낙폭/손익비 등 지표
-- [ ] 백테스트와 DRY_RUN에서 동일 전략 사용
+- [ ] 수익률/승률/최대낙폭/손익비 지표
 
 ### Phase 9 — 자동 실행 스케줄러
-목표: 브라우저를 켜두지 않아도 정해진 조건에서 전략이 실행되도록 한다.
-
-- [ ] 실행 주기/트리거 정의
-- [ ] 중복 실행 방지
-- [ ] 실행 Lock
+- [ ] 실행 주기/트리거
+- [ ] 중복 실행 방지/Lock
 - [ ] 실행 이력
-- [ ] 장애 후 재개 정책
+- [ ] 장애 후 재개
 - [ ] 장 시작/종료 처리
 - [ ] 장외 신규주문 차단
-- [ ] Cloudflare Worker 환경에 적합한 실행 방식 검증
+- [ ] Cloudflare Worker 적합성 검증
 
 ### Phase 10 — 실계좌 매매 게이트
-목표: 실계좌 주문을 기술적으로도 실수하기 어렵게 만든다.
-
 - [ ] 기본값 `LIVE` 금지
 - [ ] 명시적 `LIVE_TRADING_ENABLED` 확인
 - [ ] 계좌 환경 일치 확인
-- [ ] 위험관리 통과 확인
-- [ ] Kill Switch 정상 여부 확인
+- [ ] 위험관리/ Kill Switch 확인
 - [ ] 장 상태 확인
 - [ ] 주문 한도 확인
 - [ ] 사용자 명시적 활성화 절차
-- [ ] 실계좌 주문 전 최종 확인 로그
-- [ ] 실계좌 기능은 모의투자 안정성 검증 후에만 활성화
+- [ ] 모의투자 안정성 검증 후에만 활성화
 
 ### Phase 11 — 모니터링/감사/복구
-
-- [ ] 주문 감사 로그
-- [ ] 전략 신호 로그
-- [ ] Risk 차단 로그
-- [ ] KIS API 오류 로그
-- [ ] 체결 로그
+- [ ] 주문/전략/Risk/KIS 오류/체결 감사 로그
 - [ ] 계좌 reconciliation 로그
 - [ ] 민감정보 마스킹
 - [ ] 장애 알림
@@ -191,35 +164,35 @@ UNKNOWN → RECONCILING → 실제 상태 확정
 - [ ] UNKNOWN 주문 자동 reconciliation
 
 ### Phase 12 — 품질/운영 안정화
-
-- [ ] 단위 테스트
-- [ ] 통합 테스트
+- [ ] 단위/통합 테스트
 - [ ] KIS API 장애 테스트
 - [ ] token 만료 테스트
-- [ ] 중복 주문 테스트
-- [ ] 부분체결 테스트
-- [ ] 재시작 테스트
-- [ ] 잔고 불일치 테스트
+- [ ] 중복 주문/부분체결 테스트
+- [ ] 재시작/잔고 불일치 테스트
 - [ ] 빌드/배포 자동 검증
 - [ ] 보안 점검
-- [ ] 운영 매뉴얼 작성
-- [ ] 실거래 전 최종 체크리스트
+- [ ] 운영 매뉴얼 및 실거래 전 체크리스트
 
 ## 4. 현재 다음 작업
 
-**Phase 3 — 계좌/잔고/포지션**을 진행한다.
+**Phase 3 후반 → Phase 4 진입 준비**.
 
-현재 Worker는 `APP_KEY` / `APP_SECRET` / `ACCOUNT_NUM`을 서버 측 Secret으로 사용하도록 구성했고, `KIS_ENVIRONMENT=PAPER`를 기본값으로 유지한다. 브라우저에는 KIS 인증정보와 계좌번호를 전달하지 않는다.
+현재 실제 LIVE 계좌에 대해 다음 읽기 전용 연결이 검증되었다.
 
-이번 구현에서는 KIS 주식잔고조회 API의 연속조회 헤더(`tr_cont`)와 context key를 지원하고, 예수금·D+1·D+2 정산금액·총평가금액·순자산 및 보유종목을 내부 `AccountSnapshot` / `AccountPosition`으로 변환하는 읽기 전용 `/account` 엔드포인트를 제공한다. 또한 종목/주문단가/주문구분을 받아 KIS 매수가능조회(`inquire-psbl-order`)를 호출하는 `/buyable` 엔드포인트를 추가했다.
+1. `/account` — 국내주식 잔고/예수금/포지션
+2. `/account/assets` — 계좌 전체 자산 구성
+3. `/buyable` — 종목별 국내주식 주문가능 금액/수량
+4. `/orders` — 국내주식 주문/체결 내역
+
+현재 실제 계좌는 국내 현금과 국내주식 보유가 0이고 해외 달러 자산만 존재하므로, `/buyable`의 국내 주문가능 현금 0원은 정상적인 상태다. 해외 자산 총액을 국내 주문가능 현금으로 간주하지 않는다.
 
 다음 구현 단위:
 
-1. Worker Actions에서 `/buyable` 코드 테스트/배포 성공 검증
-2. 등록된 `ACCOUNT_NUM`으로 `/account` 및 `/buyable?symbol=005930&price=...` 실제 PAPER 조회 검증
-3. KIS 실제 상태와 서버 내부 포지션 reconciliation 모델 추가
-4. 불일치 시 신규주문 차단 계약 추가
-5. Phase 4 주문 도메인 모델 착수
+1. `/orders` 실제 LIVE 조회 검증
+2. KIS 실제 포지션/주문 상태와 내부 상태 reconciliation 모델 추가
+3. 불일치 시 신규주문 차단 계약 추가
+4. Phase 4 `Order` 도메인/상태 머신 구현
+5. 실제 주문 API는 모의투자 + DRY_RUN 안전장치 이후에만 추가
 
 ## 5. 완료 판정
 
@@ -230,4 +203,4 @@ UNKNOWN → RECONCILING → 실제 상태 확정
 - 자동 테스트 또는 정적 검증 통과
 - 실패/장애 경로 확인
 - 보안상 민감정보가 저장소에 없음
-- 다음 Phase를 시작할 수 있는 전제조건이 확보됨
+- 다음 Phase를 시작할 수 있는 전제조건 확보
