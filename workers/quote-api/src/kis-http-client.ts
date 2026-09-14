@@ -333,6 +333,70 @@ export class KISHttpClient {
     throw lastError ?? new KISHttpError('KIS_UPSTREAM_ERROR', 'KIS API request failed');
   }
 
+  async postJsonResponse<T>(path: string, body: unknown, headers: Record<string, string>): Promise<KISJsonResponse<T>> {
+    let token = await this.getAccessToken();
+    const url = `${this.baseUrl}${path}`;
+    let lastError: KISHttpError | null = null;
+    let tokenRefreshRetried = false;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await this.fetchWithTimeout(url, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          appkey: this.options.appKey,
+          appsecret: this.options.appSecret,
+          'content-type': 'application/json; charset=utf-8',
+          ...headers,
+        },
+        body: JSON.stringify(body),
+      });
+
+      let responseBody: T;
+      try {
+        responseBody = (await response.json()) as T;
+      } catch {
+        if (response.ok) throw new KISHttpError('KIS_INVALID_RESPONSE', 'KIS response was not valid JSON');
+        throw new KISHttpError('KIS_UPSTREAM_ERROR', 'KIS API response was not valid JSON', response.status);
+      }
+
+      const rejected = (responseBody ?? {}) as T & KISRejectedResponse;
+      const authRejected = response.status === 401
+        || response.status === 403
+        || TOKEN_AUTH_ERROR_CODES.has(String(rejected.msg_cd ?? ''));
+
+      if (authRejected && !tokenRefreshRetried) {
+        tokenRefreshRetried = true;
+        await this.invalidateTokenCache();
+        token = await this.getAccessToken();
+        continue;
+      }
+
+      if (authRejected) {
+        throw new KISHttpError(
+          'KIS_AUTH_FAILED',
+          rejected.msg1 ? `KIS API authentication failed: ${rejected.msg1}` : 'KIS API authentication failed',
+          response.status,
+          rejected.msg_cd,
+        );
+      }
+
+      if (response.ok) return { data: responseBody, headers: response.headers };
+
+      const retryable = response.status === 429 || response.status >= 500;
+      lastError = new KISHttpError(
+        response.status === 429 ? 'KIS_RATE_LIMITED' : 'KIS_UPSTREAM_ERROR',
+        rejected.msg1 ? `KIS API request was rejected: ${rejected.msg1}` : 'KIS API request was rejected',
+        response.status,
+        rejected.msg_cd,
+      );
+      if (!retryable || attempt === 2) throw lastError;
+      await sleep(Math.max(this.minRequestIntervalMs, 500 * (attempt + 1)));
+    }
+
+    throw lastError ?? new KISHttpError('KIS_UPSTREAM_ERROR', 'KIS API request failed');
+  }
+
   async getJson<T>(path: string, headers: Record<string, string>): Promise<T> {
     return (await this.getJsonResponse<T>(path, headers)).data;
   }

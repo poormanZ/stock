@@ -5,6 +5,7 @@ export interface ReconciliationPosition {
 
 export interface ReconciliationOrder {
   brokerOrderId: string;
+  clientOrderId?: string;
   status: string;
   symbol: string;
   side: 'buy' | 'sell' | 'unknown';

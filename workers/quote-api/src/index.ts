@@ -1,12 +1,13 @@
 import { KISAccountAdapter } from './kis-account-adapter';
 import { KISHttpClient, KISHttpError } from './kis-http-client';
 import { KISOrderAdapter } from './kis-order-adapter';
+import { KISPaperOrderAdapter, toPaperAcceptedOrder } from './kis-paper-order-adapter';
 import { KISQuoteAdapter } from './kis-quote-adapter';
 import { KISTokenBroker } from './kis-token-broker';
 import { InternalStateStoreDO } from './internal-state-store';
 import { DryRunStateStoreDO } from './dry-run-simulator';
 import { RiskStateStoreDO, DEFAULT_RISK_CONFIG, checkRisk } from './risk-manager';
-import { assertOrderRequest, type CreateOrderRequest } from './order-domain';
+import { assertOrderRequest, transitionOrder, type CreateOrderRequest, type Order } from './order-domain';
 import { checkNewOrderGate } from './order-gate';
 import { parseSymbols, QUOTE_MAX_SYMBOLS, validateSymbols } from './quote-contract';
 import { reconcile } from './reconciliation';
@@ -291,6 +292,120 @@ export default {
           headers: { 'content-type': 'application/json' },
         }),
       );
+    }
+
+    if (url.pathname === '/paper/orders' && request.method === 'POST') {
+      if (getEnvironment(env) !== 'PAPER') return json({ error: 'PAPER_ENVIRONMENT_REQUIRED' }, 409, origin);
+      if (!env.ACCOUNT_CANO || !env.ACCOUNT_PRODUCT_CODE) return json({ error: 'ACCOUNT_NOT_CONFIGURED' }, 503, origin);
+
+      const body = await request.json().catch(() => null);
+      if (!body || typeof body !== 'object') return json({ error: 'INVALID_PAPER_ORDER_REQUEST' }, 400, origin);
+      const candidate = body as { request?: CreateOrderRequest; referencePrice?: number };
+      const requestBody = candidate.request as CreateOrderRequest;
+      try {
+        assertOrderRequest(requestBody);
+      } catch {
+        return json({ error: 'INVALID_ORDER' }, 400, origin);
+      }
+      if (!Number.isFinite(candidate.referencePrice)) return json({ error: 'INVALID_REFERENCE_PRICE' }, 400, origin);
+
+      try {
+        const internalId = env.INTERNAL_STATE_STORE.idFromName('primary');
+        const internalStore = env.INTERNAL_STATE_STORE.get(internalId);
+        const internalResponse = await internalStore.fetch('https://internal-state/');
+        if (!internalResponse.ok) throw new Error('INTERNAL_STATE_UNAVAILABLE');
+        const internalState = (await internalResponse.json()) as {
+          positions: { symbol: string; quantity: number }[];
+          orders: { brokerOrderId: string; status: string; symbol: string; side: 'buy' | 'sell' | 'unknown'; quantity: number; executedQuantity: number; clientOrderId?: string }[];
+          orderRecords?: Order[];
+        };
+        const existing = (internalState.orderRecords ?? []).find((order) => order.clientOrderId === requestBody.clientOrderId);
+        if (existing) return json({ idempotent: true, order: existing }, 200, origin);
+
+        const [reconciliation, quote] = await Promise.all([
+          loadReconciliation(env),
+          new KISQuoteAdapter(createClient(env)).getQuote(requestBody.symbol),
+        ]);
+        const gate = checkNewOrderGate(requestBody, reconciliation);
+        if (!gate.allowed) return json({ error: gate.reason, reconciliation }, 409, origin);
+
+        const riskResponse = await riskStore.fetch('https://risk-state/');
+        const killSwitch = (await riskResponse.json()) as { active: boolean };
+        const risk = checkRisk({
+          request: requestBody,
+          state: internalState,
+          market: {
+            referencePrice: candidate.referencePrice as number,
+            quoteAsOf: (quote as { asOf?: string }).asOf,
+            now: new Date().toISOString(),
+          },
+          config: DEFAULT_RISK_CONFIG,
+          killSwitchActive: killSwitch.active,
+          reconciliationAllowed: reconciliation.canPlaceNewOrders,
+          apiHealthy: true,
+        });
+        if (!risk.allowed) return json({ error: risk.reason, risk, reconciliation }, 409, origin);
+
+        const now = new Date().toISOString();
+        let order: Order = {
+          id: requestBody.id,
+          clientOrderId: requestBody.clientOrderId,
+          symbol: requestBody.symbol,
+          side: requestBody.side,
+          orderType: requestBody.orderType,
+          quantity: requestBody.quantity,
+          limitPrice: requestBody.limitPrice,
+          executedQuantity: 0,
+          averageExecutedPrice: 0,
+          status: 'CREATED',
+          createdAt: now,
+          updatedAt: now,
+        };
+        order = transitionOrder(order, 'SUBMITTING');
+        await internalStore.fetch(new Request('https://internal-state/', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'apply-order', order }),
+          headers: { 'content-type': 'application/json' },
+        }));
+
+        try {
+          const submission = await new KISPaperOrderAdapter(
+            createClient(env),
+            getEnvironment(env),
+            env.ACCOUNT_CANO,
+            env.ACCOUNT_PRODUCT_CODE,
+          ).submit(requestBody);
+
+          if (!submission.accepted) {
+            order = transitionOrder(order, 'REJECTED');
+            await internalStore.fetch(new Request('https://internal-state/', {
+              method: 'POST',
+              body: JSON.stringify({ action: 'apply-order', order }),
+              headers: { 'content-type': 'application/json' },
+            }));
+            return json({ error: 'PAPER_ORDER_REJECTED', code: submission.messageCode, message: submission.message, order }, 409, origin);
+          }
+
+          order = toPaperAcceptedOrder(order, submission);
+          await internalStore.fetch(new Request('https://internal-state/', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'apply-order', order }),
+            headers: { 'content-type': 'application/json' },
+          }));
+          return json({ order, messageCode: submission.messageCode, message: submission.message }, 200, origin);
+        } catch (error) {
+          order = transitionOrder(order, 'UNKNOWN');
+          await internalStore.fetch(new Request('https://internal-state/', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'apply-order', order }),
+            headers: { 'content-type': 'application/json' },
+          }));
+          console.error('PAPER order submission entered UNKNOWN', error instanceof Error ? error.message : 'unknown error');
+          return json({ error: 'PAPER_ORDER_UNKNOWN', order }, 502, origin);
+        }
+      } catch (error) {
+        return errorResponse(error, origin, 'RECONCILIATION');
+      }
     }
 
     if (request.method !== 'GET') return json({ error: 'METHOD_NOT_ALLOWED' }, 405, origin);

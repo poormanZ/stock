@@ -22,6 +22,9 @@
 - [x] API 장애/계좌 불일치 주문 차단
 - [x] 긴급 정지(Kill Switch) Durable Object 저장
 - [x] DRY_RUN 주문 경로 Risk Manager 연결
+- [x] PAPER 주문 Adapter 기본 전송 경로
+- [x] PAPER 주문도 reconciliation Gate + Risk Manager 통과
+- [x] PAPER 주문 clientOrderId 멱등성 및 UNKNOWN 상태 처리
 - [ ] 모의투자 주문
 - [ ] 전략/백테스트
 - [ ] 실계좌 주문
@@ -62,7 +65,8 @@
 - [x] `clientOrderId` 모델
 - [x] 부분체결 상태 전이
 - [x] 거부/취소/UNKNOWN 상태 전이
-- [ ] 주문 생성 → 전송 → 조회 → 취소 흐름
+- [x] 주문 생성 → 전송의 PAPER 기본 흐름
+- [ ] 주문 생성 → 전송 → 조회 → 취소 전체 흐름
 - [ ] 주문 상태 재동기화
 
 ## Phase 5 — DRY_RUN
@@ -84,14 +88,15 @@
 - [x] 계좌 불일치 차단
 - [x] 긴급 정지 상태 저장
 - [x] 모든 DRY_RUN 주문 경로가 Risk Manager를 통과하도록 보장
-- [ ] PAPER 주문 경로에도 동일 Risk Manager 연결
+- [x] PAPER 주문 경로에도 동일 Risk Manager 연결
 
 ## Phase 7 — 모의투자 자동매매
-- [ ] 모의투자 주문 Adapter
+- [x] 모의투자 주문 Adapter
 - [ ] 주문/체결 조회
-- [ ] LIVE/PAPER 환경 분리 검증
+- [x] LIVE/PAPER 환경 분리 검증
 - [ ] 장 운영시간 처리
-- [ ] 실패/부분체결/취소 복구
+- [x] 실패/UNKNOWN 복구 1차 처리
+- [ ] 부분체결/취소 복구
 - [ ] 일정 기간 안정성 검증
 
 ## Phase 8 — 전략 / 백테스트
@@ -141,6 +146,6 @@
 
 ## 현재 다음 작업
 
-**Phase 7 — 모의투자 주문 Adapter**.
+**Phase 7 — 주문/체결 조회 및 PAPER 상태 재동기화**.
 
-원칙은 `주문 형식 검증 → reconciliation Gate → Risk Manager → DRY_RUN/PAPER 주문` 순서이며, 실제 KIS LIVE 주문 API는 안전장치가 모두 검증될 때까지 추가하지 않는다.
+원칙은 `주문 형식 검증 → reconciliation Gate → Risk Manager → PAPER 주문` 순서이며, 현재 Worker의 `KIS_ENVIRONMENT`는 `LIVE`이므로 `/paper/orders`는 실제로 주문을 전송하지 않고 환경 오류로 차단된다. LIVE 주문 API는 계속 추가하지 않는다.
