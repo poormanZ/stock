@@ -56,3 +56,20 @@ export function simulateOrder(state: DryRunState, request: CreateOrderRequest, r
   state.updatedAt = now;
   return { order, cash: state.cash, positions: state.positions, grossAmount, fee, tax, executedPrice, executedQuantity, filled: executedQuantity > 0 };
 }
+
+export class DryRunStateStoreDO {
+  constructor(private readonly state: DurableObjectState) {}
+  async fetch(request: Request): Promise<Response> {
+    const current = (await this.state.storage.get<DryRunState>('state')) ?? createDryRunState();
+    if (request.method === 'GET') return Response.json(current, { headers: { 'cache-control': 'no-store' } });
+    if (request.method !== 'POST') return Response.json({ error: 'METHOD_NOT_ALLOWED' }, { status: 405 });
+    const body = await request.json() as { action?: 'reset' | 'order'; request?: CreateOrderRequest; referencePrice?: number; fillQuantity?: number; config?: DryRunConfig; initialCash?: number };
+    if (body.action === 'reset') { const reset = createDryRunState(body.initialCash); await this.state.storage.put('state', reset); return Response.json(reset); }
+    if (body.action !== 'order' || !body.request || !Number.isFinite(body.referencePrice)) return Response.json({ error: 'INVALID_DRY_RUN_REQUEST' }, { status: 400 });
+    try {
+      const result = simulateOrder(current, body.request, body.referencePrice!, body.fillQuantity, body.config ?? DEFAULT_DRY_RUN_CONFIG);
+      await this.state.storage.put('state', current);
+      return Response.json({ mode: 'DRY_RUN', ...result });
+    } catch (error) { return Response.json({ error: error instanceof Error ? error.message : 'DRY_RUN_FAILED' }, { status: 400 }); }
+  }
+}
