@@ -35,10 +35,20 @@ interface KISHttpClientOptions {
 type KISTokenResponse = {
   access_token?: string;
   access_token_token_expired?: string;
+  rt_cd?: string;
+  msg_cd?: string;
+  msg1?: string;
 };
 
 type CachedToken = { value: string; expiresAt: number; baseUrl: string };
-type BrokerTokenResponse = { accessToken?: string; expiresAt?: number; error?: string; status?: number; code?: string };
+type BrokerTokenResponse = {
+  accessToken?: string;
+  expiresAt?: number;
+  error?: string;
+  status?: number;
+  code?: string;
+  message?: string;
+};
 type KISRejectedResponse = { msg_cd?: string; msg1?: string; rt_cd?: string };
 
 export interface KISJsonResponse<T> {
@@ -85,6 +95,11 @@ async function readRejectedResponse(response: Response): Promise<KISRejectedResp
   }
 }
 
+function safeErrorMessage(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : fallback;
+  return message.replace(/(appsecret|appkey|authorization|bearer)\s*[:=]\s*[^\s,]+/gi, '$1=[redacted]').slice(0, 200);
+}
+
 export class KISHttpClient {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
@@ -118,7 +133,7 @@ export class KISHttpClient {
         if (error instanceof DOMException && error.name === 'AbortError') {
           throw new KISHttpError('KIS_TIMEOUT', 'KIS API request timed out');
         }
-        throw new KISHttpError('KIS_UPSTREAM_ERROR', 'KIS API request failed');
+        throw new KISHttpError('KIS_UPSTREAM_ERROR', `KIS API request failed: ${safeErrorMessage(error, 'network error')}`);
       } finally {
         clearTimeout(timeout);
       }
@@ -152,14 +167,23 @@ export class KISHttpClient {
       let response: Response;
       try {
         response = await id.fetch('https://kis-token-broker/token');
-      } catch {
-        throw new KISHttpError('KIS_UPSTREAM_ERROR', 'KIS token broker request failed');
+      } catch (error) {
+        throw new KISHttpError(
+          'KIS_UPSTREAM_ERROR',
+          `KIS token broker request failed: ${safeErrorMessage(error, 'broker network error')}`,
+        );
       }
-      const body = (await response.json()) as BrokerTokenResponse;
+      let body: BrokerTokenResponse = {};
+      try {
+        body = (await response.json()) as BrokerTokenResponse;
+      } catch {
+        throw new KISHttpError('KIS_INVALID_RESPONSE', 'KIS token broker response was not valid JSON', response.status);
+      }
       if (!response.ok) {
+        const detail = body.message ? `: ${body.message}` : '';
         throw new KISHttpError(
           body.code ? 'KIS_AUTH_FAILED' : 'KIS_UPSTREAM_ERROR',
-          'KIS token broker rejected the request',
+          `KIS token broker rejected the request${detail}`,
           body.status ?? response.status,
           body.code,
         );
@@ -168,7 +192,12 @@ export class KISHttpClient {
         cachedToken = { value: body.accessToken, expiresAt: body.expiresAt, baseUrl: this.baseUrl };
         return body.accessToken;
       }
-      throw new KISHttpError('KIS_AUTH_FAILED', 'KIS token broker did not return a valid token');
+      throw new KISHttpError(
+        'KIS_AUTH_FAILED',
+        body.message ? `KIS token broker did not return a valid token: ${body.message}` : 'KIS token broker did not return a valid token',
+        body.status,
+        body.code,
+      );
     }
 
     return this.issueAccessToken();
@@ -189,21 +218,24 @@ export class KISHttpClient {
       }),
     });
 
-    if (!response.ok) {
-      const body = await readRejectedResponse(response);
+    const body = await readRejectedResponse(response);
+    if (!response.ok || (body.rt_cd !== undefined && body.rt_cd !== '0')) {
       const code = response.status === 429 ? 'KIS_RATE_LIMITED' : 'KIS_AUTH_FAILED';
-      throw new KISHttpError(code, 'KIS access token request was rejected', response.status, body.msg_cd);
-    }
-
-    let body: KISTokenResponse;
-    try {
-      body = (await response.json()) as KISTokenResponse;
-    } catch {
-      throw new KISHttpError('KIS_INVALID_RESPONSE', 'KIS token response was invalid');
+      throw new KISHttpError(
+        code,
+        body.msg1 ? `KIS access token request was rejected: ${body.msg1}` : 'KIS access token request was rejected',
+        response.status,
+        body.msg_cd,
+      );
     }
 
     if (!body.access_token) {
-      throw new KISHttpError('KIS_AUTH_FAILED', 'KIS access token was not returned');
+      throw new KISHttpError(
+        'KIS_AUTH_FAILED',
+        body.msg1 ? `KIS access token was not returned: ${body.msg1}` : 'KIS access token was not returned',
+        response.status,
+        body.msg_cd,
+      );
     }
 
     const record: CachedToken = {
@@ -233,7 +265,7 @@ export class KISHttpClient {
         const response = await id.fetch('https://kis-token-broker/token', { method: 'POST' });
         if (!response.ok) console.error('KIS token broker cache invalidation failed', { status: response.status });
       } catch (error) {
-        console.error('KIS token broker cache invalidation failed', error instanceof Error ? error.message : 'unknown error');
+        console.error('KIS token broker cache invalidation failed', safeErrorMessage(error, 'unknown error'));
       }
     }
   }
@@ -263,7 +295,9 @@ export class KISHttpClient {
       }
 
       const rejected = (body ?? {}) as T & KISRejectedResponse;
-      const authRejected = TOKEN_AUTH_ERROR_CODES.has(String(rejected.msg_cd ?? ''));
+      const authRejected = response.status === 401
+        || response.status === 403
+        || TOKEN_AUTH_ERROR_CODES.has(String(rejected.msg_cd ?? ''));
 
       if (authRejected && !tokenRefreshRetried) {
         tokenRefreshRetried = true;
