@@ -8,4 +8,4 @@ KIS_ENVIRONMENT = "PAPER"
 ALLOWED_ORIGIN = "https://poormanz.github.io"
 
 [secrets]
-required = ["APP_KEY", "APP_SECRET"]
+required = ["APP_KEY", "APP_SECRET", "KIS_ACCOUNT_NO"]
