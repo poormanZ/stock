@@ -27,6 +27,7 @@ function errorResponse(error: unknown, origin: string, scope: 'QUOTE' | 'ACCOUNT
     const body: Record<string, unknown> = { error: error.code };
     if (error.status !== undefined) body.status = error.status;
     if (error.upstreamCode) body.code = error.upstreamCode;
+    if (error.message) body.message = error.message.slice(0, 300);
     console.error(`${scope} KIS HTTP request failed`, { code: error.code, status: error.status, upstreamCode: error.upstreamCode, message: error.message });
     return json(body, status, origin);
   }
@@ -37,17 +38,10 @@ function errorResponse(error: unknown, origin: string, scope: 'QUOTE' | 'ACCOUNT
   }
   if (scope === 'BUYABLE' && error instanceof Error) { const match = error.message.match(/^KIS buyable request failed: ([A-Za-z0-9_-]+)$/); if (match) { console.error('KIS buyable request rejected', { msgCode: match[1] }); return json({ error: 'KIS_BUYABLE_REJECTED', code: match[1] }, 502, origin); } }
   const errorCode = scope === 'ACCOUNT' ? 'ACCOUNT_UNAVAILABLE' : scope === 'ACCOUNT_ASSET' ? 'ACCOUNT_ASSET_UNAVAILABLE' : scope === 'BUYABLE' ? 'BUYABLE_UNAVAILABLE' : 'QUOTE_UNAVAILABLE';
-  console.error(`${scope} request failed`, error instanceof Error ? error.message : 'unknown error'); return json({ error: errorCode }, 502, origin);
+  console.error(`${scope} request failed`, error instanceof Error ? error.message : 'unknown error'); return json({ error: errorCode, message: error instanceof Error ? error.message.slice(0, 300) : 'unknown error' }, 502, origin);
 }
 function createClient(env: Env): KISHttpClient {
-  return new KISHttpClient({
-    appKey: env.APP_KEY,
-    appSecret: env.APP_SECRET,
-    environment: getEnvironment(env),
-    baseUrl: env.KIS_BASE_URL,
-    tokenCache: env.KIS_TOKEN_CACHE,
-    tokenBroker: env.KIS_TOKEN_BROKER,
-  });
+  return new KISHttpClient({ appKey: env.APP_KEY, appSecret: env.APP_SECRET, environment: getEnvironment(env), baseUrl: env.KIS_BASE_URL, tokenCache: env.KIS_TOKEN_CACHE, tokenBroker: env.KIS_TOKEN_BROKER });
 }
 function parseOrderType(value: string | null): 'market' | 'limit' | null { if (!value || value === 'market') return 'market'; if (value === 'limit') return 'limit'; return null; }
 
