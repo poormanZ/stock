@@ -7,5 +7,7 @@ compatibility_date = "2026-09-04"
 KIS_ENVIRONMENT = "LIVE"
 ALLOWED_ORIGIN = "https://poormanz.github.io"
 
+# 한국투자 Open Trading API 구조와 동일하게 계좌번호 앞 8자리와
+# 계좌상품코드 뒤 2자리를 별도 값으로 관리한다.
 [secrets]
-required = ["APP_KEY", "APP_SECRET", "ACCOUNT_NUM"]
+required = ["APP_KEY", "APP_SECRET", "ACCOUNT_CANO", "ACCOUNT_PRODUCT_CODE"]

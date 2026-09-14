@@ -93,29 +93,29 @@ function normalizePosition(item: RawBalanceItem): AccountPosition | null {
   };
 }
 
-function accountParts(accountNumber: string): { cano: string; accountProductCode: string } {
-  const trimmed = accountNumber.trim();
-  if (!/^\d{8}-?\d{2}$/.test(trimmed)) {
-    throw new Error('KIS account number must use 8-2 format');
+function validateAccountParts(cano: string, accountProductCode: string): void {
+  if (!/^\d{8}$/.test(cano.trim())) {
+    throw new Error('KIS account CANO must use 8 digits');
   }
-  const normalized = trimmed.replace('-', '');
-  return {
-    cano: normalized.slice(0, 8),
-    accountProductCode: normalized.slice(8, 10),
-  };
+  if (!/^\d{2}$/.test(accountProductCode.trim())) {
+    throw new Error('KIS account product code must use 2 digits');
+  }
 }
 
 export class KISAccountAdapter {
   constructor(
     private readonly client: KISHttpClient,
     private readonly environment: 'PAPER' | 'LIVE',
-    private readonly accountNumber: string,
+    private readonly cano: string,
+    private readonly accountProductCode: string,
   ) {}
 
   async getSnapshot(): Promise<AccountSnapshot> {
-    const { cano, accountProductCode } = accountParts(this.accountNumber);
-    const trId = this.environment === 'LIVE' ? LIVE_TR_ID : PAPER_TR_ID;
+    const cano = this.cano.trim();
+    const accountProductCode = this.accountProductCode.trim();
+    validateAccountParts(cano, accountProductCode);
 
+    const trId = this.environment === 'LIVE' ? LIVE_TR_ID : PAPER_TR_ID;
     const positions: AccountPosition[] = [];
     let contextForward = '';
     let contextNext = '';
@@ -185,7 +185,10 @@ export class KISAccountAdapter {
     if (!/^\d{6}$/.test(symbol)) throw new Error('KIS stock symbol must use 6 digits');
     if (!Number.isFinite(orderPrice) || orderPrice <= 0) throw new Error('KIS order price must be positive');
 
-    const { cano, accountProductCode } = accountParts(this.accountNumber);
+    const cano = this.cano.trim();
+    const accountProductCode = this.accountProductCode.trim();
+    validateAccountParts(cano, accountProductCode);
+
     const trId = this.environment === 'LIVE' ? LIVE_BUYABLE_TR_ID : PAPER_BUYABLE_TR_ID;
     const query = new URLSearchParams({
       CANO: cano,

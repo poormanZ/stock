@@ -8,53 +8,28 @@ describe('KISAccountAdapter', () => {
       {
         data: {
           rt_cd: '0',
-          output1: [
-            {
-              pdno: '005930',
-              prdt_name: '삼성전자',
-              hldg_qty: '10',
-              pchs_avg_pric: '70000',
-              prpr: '75000',
-              pchs_amt: '700000',
-              evlu_amt: '750000',
-              evlu_pfls_amt: '50000',
-              evlu_pfls_rt: '7.14',
-            },
-          ],
+          output1: [{
+            pdno: '005930', prdt_name: '삼성전자', hldg_qty: '10', pchs_avg_pric: '70000', prpr: '75000',
+            pchs_amt: '700000', evlu_amt: '750000', evlu_pfls_amt: '50000', evlu_pfls_rt: '7.14',
+          }],
           output2: {
-            dnca_tot_amt: '1000000',
-            nxdy_excc_amt: '900000',
-            prvs_rcdl_excc_amt: '800000',
-            tot_evlu_amt: '1750000',
-            nass_amt: '1750000',
+            dnca_tot_amt: '1000000', nxdy_excc_amt: '900000', prvs_rcdl_excc_amt: '800000',
+            tot_evlu_amt: '1750000', nass_amt: '1750000',
           },
-          ctx_area_fk100: 'next-forward',
-          ctx_area_nk100: 'next-key',
+          ctx_area_fk100: 'next-forward', ctx_area_nk100: 'next-key',
         },
         headers: new Headers({ tr_cont: 'M' }),
       },
       {
         data: {
           rt_cd: '0',
-          output1: [
-            {
-              pdno: '000660',
-              prdt_name: 'SK하이닉스',
-              hldg_qty: '2',
-              pchs_avg_pric: '100000',
-              prpr: '120000',
-              pchs_amt: '200000',
-              evlu_amt: '240000',
-              evlu_pfls_amt: '40000',
-              evlu_pfls_rt: '20',
-            },
-          ],
+          output1: [{
+            pdno: '000660', prdt_name: 'SK하이닉스', hldg_qty: '2', pchs_avg_pric: '100000', prpr: '120000',
+            pchs_amt: '200000', evlu_amt: '240000', evlu_pfls_amt: '40000', evlu_pfls_rt: '20',
+          }],
           output2: [{
-            dnca_tot_amt: '1000000',
-            nxdy_excc_amt: '900000',
-            prvs_rcdl_excc_amt: '800000',
-            tot_evlu_amt: '1990000',
-            nass_amt: '1990000',
+            dnca_tot_amt: '1000000', nxdy_excc_amt: '900000', prvs_rcdl_excc_amt: '800000',
+            tot_evlu_amt: '1990000', nass_amt: '1990000',
           }],
         },
         headers: new Headers({ tr_cont: 'D' }),
@@ -69,7 +44,7 @@ describe('KISAccountAdapter', () => {
       },
     } as never;
 
-    const adapter = new KISAccountAdapter(client, 'PAPER', '12345678-01');
+    const adapter = new KISAccountAdapter(client, 'PAPER', '12345678', '01');
     const snapshot = await adapter.getSnapshot();
 
     expect(snapshot.cash).toBe(1000000);
@@ -89,23 +64,16 @@ describe('KISAccountAdapter', () => {
         requestedPath = path;
         requestedHeaders = headers;
         return {
-          data: {
-            rt_cd: '0',
-            output: {
-              nrcvb_buy_amt: '9998235',
-              max_buy_amt: '19996470',
-              ord_psbl_cash: '9998235',
-              nrcvb_buy_qty: '100',
-              max_buy_qty: '200',
-              psbl_qty_calc_unpr: '99999',
-            },
-          },
+          data: { rt_cd: '0', output: {
+            nrcvb_buy_amt: '9998235', max_buy_amt: '19996470', ord_psbl_cash: '9998235',
+            nrcvb_buy_qty: '100', max_buy_qty: '200', psbl_qty_calc_unpr: '99999',
+          } },
           headers: new Headers(),
         } as unknown as KISJsonResponse<T>;
       },
     } as never;
 
-    const adapter = new KISAccountAdapter(client, 'PAPER', '12345678-01');
+    const adapter = new KISAccountAdapter(client, 'PAPER', '12345678', '01');
     const result = await adapter.getBuyable('005930', 99999, 'market');
 
     expect(requestedPath).toContain('/uapi/domestic-stock/v1/trading/inquire-psbl-order?');
@@ -126,23 +94,18 @@ describe('KISAccountAdapter', () => {
     const client = {
       getJsonResponse: async <T>(_path: string, headers: Record<string, string>) => {
         trId = headers.tr_id;
-        return {
-          data: { rt_cd: '0', output: {} },
-          headers: new Headers(),
-        } as unknown as KISJsonResponse<T>;
+        return { data: { rt_cd: '0', output: {} }, headers: new Headers() } as unknown as KISJsonResponse<T>;
       },
     } as never;
 
-    const adapter = new KISAccountAdapter(client, 'LIVE', '12345678-01');
+    const adapter = new KISAccountAdapter(client, 'LIVE', '12345678', '01');
     await adapter.getBuyable('005930', 70000, 'limit');
-
     expect(trId).toBe('TTTC8908R');
   });
 
-  it('rejects malformed account numbers before calling KIS', async () => {
+  it('rejects malformed CANO and product code before calling KIS', async () => {
     const client = { getJsonResponse: async () => { throw new Error('must not call'); } } as never;
-    const adapter = new KISAccountAdapter(client, 'PAPER', '1234');
-
-    await expect(adapter.getSnapshot()).rejects.toThrow('8-2 format');
+    await expect(new KISAccountAdapter(client, 'PAPER', '1234', '01').getSnapshot()).rejects.toThrow('CANO');
+    await expect(new KISAccountAdapter(client, 'PAPER', '12345678', '1').getSnapshot()).rejects.toThrow('product code');
   });
 });

@@ -8,7 +8,8 @@ type KISEnvironment = 'PAPER' | 'LIVE';
 interface Env {
   APP_KEY: string;
   APP_SECRET: string;
-  ACCOUNT_NUM: string;
+  ACCOUNT_CANO: string;
+  ACCOUNT_PRODUCT_CODE: string;
   KIS_ENVIRONMENT?: KISEnvironment;
   KIS_BASE_URL?: string;
   ALLOWED_ORIGIN?: string;
@@ -38,7 +39,7 @@ function errorResponse(error: unknown, origin: string, scope: 'QUOTE' | 'ACCOUNT
   }
 
   if (scope === 'ACCOUNT' && error instanceof Error) {
-    if (error.message === 'KIS account number must use 8-2 format') {
+    if (error.message === 'KIS account CANO must use 8 digits' || error.message === 'KIS account product code must use 2 digits') {
       return json({ error: 'ACCOUNT_CONFIG_INVALID' }, 503, origin);
     }
     const match = error.message.match(/^KIS balance request failed: ([A-Za-z0-9_-]+)$/);
@@ -89,9 +90,14 @@ export default {
 
     const url = new URL(request.url);
     if (url.pathname === '/account') {
-      if (!env.ACCOUNT_NUM) return json({ error: 'ACCOUNT_NOT_CONFIGURED' }, 503, origin);
+      if (!env.ACCOUNT_CANO || !env.ACCOUNT_PRODUCT_CODE) return json({ error: 'ACCOUNT_NOT_CONFIGURED' }, 503, origin);
       try {
-        const adapter = new KISAccountAdapter(createClient(env), getEnvironment(env), env.ACCOUNT_NUM);
+        const adapter = new KISAccountAdapter(
+          createClient(env),
+          getEnvironment(env),
+          env.ACCOUNT_CANO,
+          env.ACCOUNT_PRODUCT_CODE,
+        );
         return json(await adapter.getSnapshot(), 200, origin);
       } catch (error) {
         return errorResponse(error, origin, 'ACCOUNT');
@@ -99,7 +105,7 @@ export default {
     }
 
     if (url.pathname === '/buyable') {
-      if (!env.ACCOUNT_NUM) return json({ error: 'ACCOUNT_NOT_CONFIGURED' }, 503, origin);
+      if (!env.ACCOUNT_CANO || !env.ACCOUNT_PRODUCT_CODE) return json({ error: 'ACCOUNT_NOT_CONFIGURED' }, 503, origin);
       const symbol = url.searchParams.get('symbol')?.trim() ?? '';
       const priceText = url.searchParams.get('price')?.trim() ?? '';
       const orderType = parseOrderType(url.searchParams.get('orderType'));
@@ -110,7 +116,12 @@ export default {
       }
 
       try {
-        const adapter = new KISAccountAdapter(createClient(env), getEnvironment(env), env.ACCOUNT_NUM);
+        const adapter = new KISAccountAdapter(
+          createClient(env),
+          getEnvironment(env),
+          env.ACCOUNT_CANO,
+          env.ACCOUNT_PRODUCT_CODE,
+        );
         return json(await adapter.getBuyable(symbol, price, orderType), 200, origin);
       } catch (error) {
         return errorResponse(error, origin, 'BUYABLE');
