@@ -5,7 +5,6 @@ compatibility_date = "2026-09-04"
 [vars]
 # 기본값은 안전한 모의투자 환경. 실계좌는 명시적으로 LIVE로 전환해야 한다.
 KIS_ENVIRONMENT = "PAPER"
-KIS_BASE_URL = "https://openapivts.koreainvestment.com:29443"
 ALLOWED_ORIGIN = "https://poormanz.github.io"
 
 [secrets]
