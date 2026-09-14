@@ -77,4 +77,27 @@ describe('resyncPaperOrders', () => {
     expect(result.orders[0]).toEqual(internal);
     expect(result.unresolved).toEqual(['99999']);
   });
+
+  it('is idempotent when the same broker snapshot is reconciled twice', () => {
+    const first = resyncPaperOrders([internal], [{ ...broker, executedQuantity: 4, averageExecutedPrice: 70100, status: 'PARTIALLY_FILLED' }]);
+    const second = resyncPaperOrders(first.orders, [{ ...broker, executedQuantity: 4, averageExecutedPrice: 70100, status: 'PARTIALLY_FILLED' }]);
+    expect(first.updated).toBe(1);
+    expect(second.updated).toBe(0);
+    expect(second.orders[0]).toMatchObject({ status: 'PARTIALLY_FILLED', executedQuantity: 4, averageExecutedPrice: 70100 });
+  });
+
+  it('supports the normal partial-fill to filled progression', () => {
+    const partial = resyncPaperOrders([internal], [{ ...broker, executedQuantity: 4, averageExecutedPrice: 70100, status: 'PARTIALLY_FILLED' }]);
+    const filled = resyncPaperOrders(partial.orders, [broker]);
+    expect(filled.updated).toBe(1);
+    expect(filled.orders[0]).toMatchObject({ status: 'FILLED', executedQuantity: 10, averageExecutedPrice: 70150 });
+  });
+
+  it('rejects a filled broker snapshot whose executed quantity is incomplete', () => {
+    expect(() => resyncPaperOrders([internal], [{ ...broker, executedQuantity: 9 }])).toThrow('FILLED_QUANTITY_MISMATCH');
+  });
+
+  it('rejects an invalid partial-fill quantity', () => {
+    expect(() => resyncPaperOrders([internal], [{ ...broker, status: 'PARTIALLY_FILLED', executedQuantity: 10 }])).toThrow('INVALID_PARTIAL_FILL_QUANTITY');
+  });
 });
