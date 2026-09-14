@@ -1,3 +1,4 @@
+import { KISAccountAdapter } from './kis-account-adapter';
 import { KISHttpClient, KISHttpError } from './kis-http-client';
 import { KISQuoteAdapter } from './kis-quote-adapter';
 import { parseSymbols, QUOTE_MAX_SYMBOLS, validateSymbols } from './quote-contract';
@@ -7,6 +8,7 @@ type KISEnvironment = 'PAPER' | 'LIVE';
 interface Env {
   APP_KEY: string;
   APP_SECRET: string;
+  KIS_ACCOUNT_NO: string;
   KIS_ENVIRONMENT?: KISEnvironment;
   KIS_BASE_URL?: string;
   ALLOWED_ORIGIN?: string;
@@ -29,22 +31,21 @@ function getEnvironment(env: Env): KISEnvironment {
   return env.KIS_ENVIRONMENT === 'LIVE' ? 'LIVE' : 'PAPER';
 }
 
-function errorResponse(error: unknown, origin: string): Response {
+function errorResponse(error: unknown, origin: string, scope: 'QUOTE' | 'ACCOUNT'): Response {
   if (error instanceof KISHttpError) {
     const status = error.code === 'KIS_TIMEOUT' ? 504 : error.code === 'KIS_RATE_LIMITED' ? 429 : 502;
     return json({ error: error.code }, status, origin);
   }
-  return json({ error: 'QUOTE_UNAVAILABLE' }, 502, origin);
+  return json({ error: scope === 'ACCOUNT' ? 'ACCOUNT_UNAVAILABLE' : 'QUOTE_UNAVAILABLE' }, 502, origin);
 }
 
-function createQuoteAdapter(env: Env): KISQuoteAdapter {
-  const client = new KISHttpClient({
+function createClient(env: Env): KISHttpClient {
+  return new KISHttpClient({
     appKey: env.APP_KEY,
     appSecret: env.APP_SECRET,
     environment: getEnvironment(env),
     baseUrl: env.KIS_BASE_URL,
   });
-  return new KISQuoteAdapter(client);
 }
 
 export default {
@@ -55,6 +56,16 @@ export default {
     if (request.method !== 'GET') return json({ error: 'METHOD_NOT_ALLOWED' }, 405, origin);
 
     const url = new URL(request.url);
+    if (url.pathname === '/account') {
+      if (!env.KIS_ACCOUNT_NO) return json({ error: 'ACCOUNT_NOT_CONFIGURED' }, 503, origin);
+      try {
+        const adapter = new KISAccountAdapter(createClient(env), getEnvironment(env), env.KIS_ACCOUNT_NO);
+        return json(await adapter.getSnapshot(), 200, origin);
+      } catch (error) {
+        return errorResponse(error, origin, 'ACCOUNT');
+      }
+    }
+
     if (url.pathname !== '/quote' && url.pathname !== '/quotes') {
       return json({ error: 'NOT_FOUND' }, 404, origin);
     }
@@ -68,12 +79,12 @@ export default {
     }
 
     try {
-      const adapter = createQuoteAdapter(env);
+      const adapter = new KISQuoteAdapter(createClient(env));
       const quotes = [];
       for (const symbol of symbols) quotes.push(await adapter.getQuote(symbol));
       return json(url.pathname === '/quote' ? quotes[0] : quotes, 200, origin);
     } catch (error) {
-      return errorResponse(error, origin);
+      return errorResponse(error, origin, 'QUOTE');
     }
   },
 };
