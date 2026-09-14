@@ -42,6 +42,7 @@ function validateAccount(cano: string, accountProductCode: string): void {
 }
 
 function validateRequest(request: CreateOrderRequest): void {
+  if (request.clientOrderId.startsWith('DRY-')) throw new Error('DRY_RUN_ORDER_NOT_ALLOWED_ON_PAPER');
   if (!/^\d{6}$/.test(request.symbol)) throw new Error('INVALID_ORDER_SYMBOL');
   if (!Number.isInteger(request.quantity) || request.quantity <= 0) throw new Error('INVALID_ORDER_QUANTITY');
   if (request.orderType === 'limit' && (!Number.isFinite(request.limitPrice) || (request.limitPrice ?? 0) <= 0)) {
@@ -109,7 +110,7 @@ export class KISPaperOrderAdapter {
     const response = await this.client.postJsonResponse<RawOrderResponse>(CANCEL_PATH, {
       CANO: this.cano.trim(),
       ACNT_PRDT_CD: this.accountProductCode.trim(),
-      KRX_FWDG_ORD_ORGNO: order.brokerOrderOrgNo,
+      KRX_FWDG_ORD_ORGNO: order.brokerOrderId,
       ORGN_ODNO: order.brokerOrderId,
       ORD_DVSN: order.orderType === 'market' ? '01' : '00',
       RVSE_CNCL_DVSN_CD: '02',
