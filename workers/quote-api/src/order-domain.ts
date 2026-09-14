@@ -7,6 +7,7 @@ export interface Order {
   id: string;
   clientOrderId: string;
   brokerOrderId?: string;
+  brokerOrderOrgNo?: string;
   symbol: string;
   side: OrderSide;
   orderType: OrderType;
@@ -54,7 +55,7 @@ export function assertOrderRequest(request: CreateOrderRequest): void {
   if (request.orderType === 'market' && request.limitPrice !== undefined) throw new Error('MARKET_ORDER_PRICE_NOT_ALLOWED');
 }
 
-export function transitionOrder(order: Order, nextStatus: OrderStatus, patch: Partial<Pick<Order, 'brokerOrderId' | 'executedQuantity' | 'averageExecutedPrice'>> = {}): Order {
+export function transitionOrder(order: Order, nextStatus: OrderStatus, patch: Partial<Pick<Order, 'brokerOrderId' | 'brokerOrderOrgNo' | 'executedQuantity' | 'averageExecutedPrice'>> = {}): Order {
   if (!canTransition(order.status, nextStatus)) throw new Error(`INVALID_ORDER_TRANSITION:${order.status}->${nextStatus}`);
   const executedQuantity = patch.executedQuantity ?? order.executedQuantity;
   if (!Number.isInteger(executedQuantity) || executedQuantity < 0 || executedQuantity > order.quantity) throw new Error('INVALID_EXECUTED_QUANTITY');
