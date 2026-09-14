@@ -164,9 +164,10 @@ export class KISHttpClient {
 
     if (this.options.tokenBroker) {
       const id = this.options.tokenBroker.idFromName(`KIS:${this.baseUrl}`);
+      const stub = this.options.tokenBroker.get(id);
       let response: Response;
       try {
-        response = await id.fetch('https://kis-token-broker/token');
+        response = await stub.fetch('https://kis-token-broker/token');
       } catch (error) {
         throw new KISHttpError(
           'KIS_UPSTREAM_ERROR',
@@ -261,8 +262,9 @@ export class KISHttpClient {
 
     if (this.options.tokenBroker) {
       const id = this.options.tokenBroker.idFromName(`KIS:${this.baseUrl}`);
+      const stub = this.options.tokenBroker.get(id);
       try {
-        const response = await id.fetch('https://kis-token-broker/token', { method: 'POST' });
+        const response = await stub.fetch('https://kis-token-broker/token', { method: 'POST' });
         if (!response.ok) console.error('KIS token broker cache invalidation failed', { status: response.status });
       } catch (error) {
         console.error('KIS token broker cache invalidation failed', safeErrorMessage(error, 'unknown error'));
