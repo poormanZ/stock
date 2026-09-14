@@ -209,11 +209,11 @@ UNKNOWN → RECONCILING → 실제 상태 확정
 
 현재 Worker는 `APP_KEY` / `APP_SECRET`을 서버 측 Secret으로 사용하고, `KIS_ENVIRONMENT=PAPER`를 기본값으로 하여 모의투자 REST 도메인을 선택한다. `LIVE`는 코드상 지원하지만 기본값이 아니다.
 
-이번 구현으로 프론트엔드는 공개 Worker URL만 사용하고, KIS 인증정보는 브라우저에 전달하지 않는다. Vite 빌드와 GitHub Pages 배포 Workflow도 추가했으며, 실제 Pages 배포 성공 여부를 확인하는 것이 남아 있다.
+이번 구현으로 프론트엔드는 공개 Worker URL만 사용하고, KIS 인증정보는 브라우저에 전달하지 않는다. Vite 빌드와 GitHub Pages 배포 Workflow를 추가했다. 최근 Pages Workflow는 `src/main.ts`의 TypeScript strict nullability 오류로 실패했으며, `app` 상수로 좁힌 수정사항을 반영했다. 새 Workflow 실행에서 빌드/배포 성공 여부를 최종 확인한다.
 
 다음 구현 단위:
 
-1. GitHub Actions에서 Pages 빌드/배포 성공 검증
+1. 수정된 Pages Workflow의 빌드/배포 성공 검증
 2. 실제 Pages에서 KIS Worker 시세 표시 검증
 3. Phase 2 완료 판정
 4. 계좌/잔고 읽기 전용 모델로 진행
