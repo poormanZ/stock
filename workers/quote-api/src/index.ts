@@ -8,7 +8,7 @@ type KISEnvironment = 'PAPER' | 'LIVE';
 interface Env {
   APP_KEY: string;
   APP_SECRET: string;
-  KIS_ACCOUNT_NO: string;
+  ACCOUNT_NUM: string;
   KIS_ENVIRONMENT?: KISEnvironment;
   KIS_BASE_URL?: string;
   ALLOWED_ORIGIN?: string;
@@ -57,9 +57,9 @@ export default {
 
     const url = new URL(request.url);
     if (url.pathname === '/account') {
-      if (!env.KIS_ACCOUNT_NO) return json({ error: 'ACCOUNT_NOT_CONFIGURED' }, 503, origin);
+      if (!env.ACCOUNT_NUM) return json({ error: 'ACCOUNT_NOT_CONFIGURED' }, 503, origin);
       try {
-        const adapter = new KISAccountAdapter(createClient(env), getEnvironment(env), env.KIS_ACCOUNT_NO);
+        const adapter = new KISAccountAdapter(createClient(env), getEnvironment(env), env.ACCOUNT_NUM);
         return json(await adapter.getSnapshot(), 200, origin);
       } catch (error) {
         return errorResponse(error, origin, 'ACCOUNT');
