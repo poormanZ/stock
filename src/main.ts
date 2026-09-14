@@ -9,6 +9,7 @@ import type { StockQuote } from './types/stock';
 
 const root = document.querySelector<HTMLDivElement>('#app');
 if (!root) throw new Error('Application root element was not found.');
+const app = root;
 
 const catalog = [...sampleStocks];
 const quoteApiBaseUrl = import.meta.env.VITE_QUOTE_API_BASE_URL?.trim() ?? '';
@@ -65,7 +66,7 @@ async function refreshQuotes(): Promise<void> {
 }
 
 function render(): void {
-  root.innerHTML = `
+  app.innerHTML = `
     <main class="shell">
       <header class="header">
         <div>
