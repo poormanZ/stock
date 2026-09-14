@@ -235,39 +235,33 @@ export default {
       }
 
       if (!Number.isFinite(candidate.referencePrice)) return json({ error: 'INVALID_REFERENCE_PRICE' }, 400, origin);
-      if (!env.ACCOUNT_CANO || !env.ACCOUNT_PRODUCT_CODE) return json({ error: 'ACCOUNT_NOT_CONFIGURED' }, 503, origin);
 
       try {
-        const [reconciliation, quote] = await Promise.all([
-          loadReconciliation(env),
-          new KISQuoteAdapter(createClient(env)).getQuote((candidate.request as CreateOrderRequest).symbol),
-        ]);
-        const gate = checkNewOrderGate(candidate.request as CreateOrderRequest, reconciliation);
-        if (!gate.allowed) return json({ error: gate.reason, reconciliation }, 409, origin);
-
         const riskResponse = await riskStore.fetch('https://risk-state/');
         const killSwitch = (await riskResponse.json()) as { active: boolean };
         const dryResponse = await store.fetch('https://dry-run-state/');
+        if (!dryResponse.ok) throw new Error('DRY_RUN_STATE_UNAVAILABLE');
         const dryState = (await dryResponse.json()) as {
           positions: { symbol: string; quantity: number }[];
           orders: import('./order-domain').Order[];
           dailyLoss?: number;
         };
 
+        const now = new Date().toISOString();
         const risk = checkRisk({
           request: candidate.request as CreateOrderRequest,
           state: dryState,
           market: {
             referencePrice: candidate.referencePrice as number,
-            quoteAsOf: (quote as { asOf?: string }).asOf,
-            now: new Date().toISOString(),
+            quoteAsOf: now,
+            now,
           },
           config: DEFAULT_RISK_CONFIG,
           killSwitchActive: killSwitch.active,
-          reconciliationAllowed: reconciliation.canPlaceNewOrders,
+          reconciliationAllowed: true,
           apiHealthy: true,
         });
-        if (!risk.allowed) return json({ error: risk.reason, risk, reconciliation }, 409, origin);
+        if (!risk.allowed) return json({ error: risk.reason, risk }, 409, origin);
 
         return store.fetch(
           new Request('https://dry-run-state/', {
@@ -277,7 +271,8 @@ export default {
           }),
         );
       } catch (error) {
-        return errorResponse(error, origin, 'RECONCILIATION');
+        console.error('DRY_RUN order failed', error);
+        return json({ error: 'DRY_RUN_UNAVAILABLE', message: error instanceof Error ? error.message.slice(0, 300) : 'unknown error' }, 503, origin);
       }
     }
 
