@@ -2,8 +2,10 @@ import type { KISHttpClient } from './kis-http-client';
 import type { CreateOrderRequest, Order } from './order-domain';
 
 const ORDER_PATH = '/uapi/domestic-stock/v1/trading/order-cash';
+const CANCEL_PATH = '/uapi/domestic-stock/v1/trading/order-rvsecncl';
 const PAPER_BUY_TR_ID = 'VTTC0012U';
 const PAPER_SELL_TR_ID = 'VTTC0011U';
+const PAPER_CANCEL_TR_ID = 'VTTC0013U';
 const EXCHANGE_ID = 'KRX';
 
 interface RawOrderResponse {
@@ -18,6 +20,15 @@ interface RawOrderResponse {
 }
 
 export interface PaperOrderSubmission {
+  accepted: boolean;
+  brokerOrderId?: string;
+  brokerOrderOrgNo?: string;
+  orderTime?: string;
+  messageCode?: string;
+  message?: string;
+}
+
+export interface PaperOrderCancellation {
   accepted: boolean;
   brokerOrderId?: string;
   orderTime?: string;
@@ -72,18 +83,48 @@ export class KISPaperOrderAdapter {
 
     const data = response.data;
     if (data.rt_cd !== '0') {
-      return {
-        accepted: false,
-        messageCode: data.msg_cd,
-        message: data.msg1,
-      };
+      return { accepted: false, messageCode: data.msg_cd, message: data.msg1 };
     }
 
     const brokerOrderId = data.output?.ODNO?.trim();
     if (!brokerOrderId) throw new Error('PAPER_ORDER_RESPONSE_MISSING_ORDER_ID');
+    const brokerOrderOrgNo = data.output?.KRX_FWDG_ORD_ORGNO?.trim();
+    if (!brokerOrderOrgNo) throw new Error('PAPER_ORDER_RESPONSE_MISSING_ORDER_ORGNO');
     return {
       accepted: true,
       brokerOrderId,
+      brokerOrderOrgNo,
+      orderTime: data.output?.ORD_TMD?.trim(),
+      messageCode: data.msg_cd,
+      message: data.msg1,
+    };
+  }
+
+  async cancel(order: Order): Promise<PaperOrderCancellation> {
+    if (this.environment !== 'PAPER') throw new Error('PAPER_ORDER_REQUIRES_PAPER_ENVIRONMENT');
+    validateAccount(this.cano, this.accountProductCode);
+    if (!order.brokerOrderId) throw new Error('PAPER_ORDER_BROKER_ID_REQUIRED');
+    if (!order.brokerOrderOrgNo) throw new Error('PAPER_ORDER_BROKER_ORGNO_REQUIRED');
+
+    const response = await this.client.postJsonResponse<RawOrderResponse>(CANCEL_PATH, {
+      CANO: this.cano.trim(),
+      ACNT_PRDT_CD: this.accountProductCode.trim(),
+      KRX_FWDG_ORD_ORGNO: order.brokerOrderOrgNo,
+      ORGN_ODNO: order.brokerOrderId,
+      ORD_DVSN: order.orderType === 'market' ? '01' : '00',
+      RVSE_CNCL_DVSN_CD: '02',
+      ORD_QTY: '0',
+      ORD_UNPR: '0',
+      QTY_ALL_ORD_YN: 'Y',
+      EXCG_ID_DVSN_CD: EXCHANGE_ID,
+      CNDT_PRIC: '',
+    }, { tr_id: PAPER_CANCEL_TR_ID, custtype: 'P' });
+
+    const data = response.data;
+    if (data.rt_cd !== '0') return { accepted: false, messageCode: data.msg_cd, message: data.msg1 };
+    return {
+      accepted: true,
+      brokerOrderId: data.output?.ODNO?.trim(),
       orderTime: data.output?.ORD_TMD?.trim(),
       messageCode: data.msg_cd,
       message: data.msg1,
@@ -96,6 +137,7 @@ export function toPaperAcceptedOrder(order: Order, submission: PaperOrderSubmiss
   return {
     ...order,
     brokerOrderId: submission.brokerOrderId,
+    brokerOrderOrgNo: submission.brokerOrderOrgNo,
     status: 'ACCEPTED',
     updatedAt: new Date().toISOString(),
   };
