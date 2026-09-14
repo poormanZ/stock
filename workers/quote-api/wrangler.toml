@@ -7,7 +7,20 @@ compatibility_date = "2026-09-04"
 KIS_ENVIRONMENT = "LIVE"
 ALLOWED_ORIGIN = "https://poormanz.github.io"
 
-# 배포/실행 시 전체 10자리 계좌번호를 서버 비밀변수로 관리하고,
-# Worker 내부에서 앞 8자리(CANO)와 뒤 2자리(계좌상품코드)로 분리한다.
+# KIS 계좌는 앞 8자리(CANO)와 뒤 2자리(계좌상품코드)로 분리해 관리한다.
 [secrets]
-required = ["APP_KEY", "APP_SECRET", "ACCOUNT_NUM"]
+required = ["APP_KEY", "APP_SECRET", "ACCOUNT_CANO", "ACCOUNT_PRODUCT_CODE"]
+
+# Access Token 영속 캐시.
+# ID를 생략하면 Wrangler가 배포 시 KV 리소스를 자동 프로비저닝한다.
+[[kv_namespaces]]
+binding = "KIS_TOKEN_CACHE"
+
+# Access Token 발급의 전역 동시성 제어.
+[[durable_objects.bindings]]
+name = "KIS_TOKEN_BROKER"
+class_name = "KISTokenBroker"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["KISTokenBroker"]
