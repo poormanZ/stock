@@ -4,7 +4,17 @@ import { KISQuoteAdapter } from './kis-quote-adapter';
 import { parseSymbols, QUOTE_MAX_SYMBOLS, validateSymbols } from './quote-contract';
 
 type KISEnvironment = 'PAPER' | 'LIVE';
-interface Env { APP_KEY: string; APP_SECRET: string; ACCOUNT_CANO: string; ACCOUNT_PRODUCT_CODE: string; KIS_ENVIRONMENT?: KISEnvironment; KIS_BASE_URL?: string; ALLOWED_ORIGIN?: string; }
+interface Env {
+  APP_KEY: string;
+  APP_SECRET: string;
+  ACCOUNT_CANO: string;
+  ACCOUNT_PRODUCT_CODE: string;
+  KIS_TOKEN_CACHE: KVNamespace;
+  KIS_TOKEN_BROKER: DurableObjectNamespace;
+  KIS_ENVIRONMENT?: KISEnvironment;
+  KIS_BASE_URL?: string;
+  ALLOWED_ORIGIN?: string;
+}
 function json(data: unknown, status = 200, origin = '*'): Response { return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': origin, 'access-control-allow-methods': 'GET,OPTIONS', 'access-control-allow-headers': 'content-type' } }); }
 function getEnvironment(env: Env): KISEnvironment { return env.KIS_ENVIRONMENT === 'LIVE' ? 'LIVE' : 'PAPER'; }
 function errorResponse(error: unknown, origin: string, scope: 'QUOTE' | 'ACCOUNT' | 'ACCOUNT_ASSET' | 'BUYABLE'): Response {
@@ -18,7 +28,16 @@ function errorResponse(error: unknown, origin: string, scope: 'QUOTE' | 'ACCOUNT
   const errorCode = scope === 'ACCOUNT' ? 'ACCOUNT_UNAVAILABLE' : scope === 'ACCOUNT_ASSET' ? 'ACCOUNT_ASSET_UNAVAILABLE' : scope === 'BUYABLE' ? 'BUYABLE_UNAVAILABLE' : 'QUOTE_UNAVAILABLE';
   console.error(`${scope} request failed`, error instanceof Error ? error.message : 'unknown error'); return json({ error: errorCode }, 502, origin);
 }
-function createClient(env: Env): KISHttpClient { return new KISHttpClient({ appKey: env.APP_KEY, appSecret: env.APP_SECRET, environment: getEnvironment(env), baseUrl: env.KIS_BASE_URL }); }
+function createClient(env: Env): KISHttpClient {
+  return new KISHttpClient({
+    appKey: env.APP_KEY,
+    appSecret: env.APP_SECRET,
+    environment: getEnvironment(env),
+    baseUrl: env.KIS_BASE_URL,
+    tokenCache: env.KIS_TOKEN_CACHE,
+    tokenBroker: env.KIS_TOKEN_BROKER,
+  });
+}
 function parseOrderType(value: string | null): 'market' | 'limit' | null { if (!value || value === 'market') return 'market'; if (value === 'limit') return 'limit'; return null; }
 
 export default { async fetch(request: Request, env: Env): Promise<Response> {
