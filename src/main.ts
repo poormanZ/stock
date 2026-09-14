@@ -7,8 +7,8 @@ import { HttpQuoteProvider, QuoteApiError } from './services/httpQuoteProvider';
 import type { QuoteProvider } from './services/quoteProvider';
 import type { StockQuote } from './types/stock';
 
-const app = document.querySelector<HTMLDivElement>('#app');
-if (!app) throw new Error('Application root element was not found.');
+const root = document.querySelector<HTMLDivElement>('#app');
+if (!root) throw new Error('Application root element was not found.');
 
 const catalog = [...sampleStocks];
 const quoteApiBaseUrl = import.meta.env.VITE_QUOTE_API_BASE_URL?.trim() ?? '';
@@ -64,8 +64,8 @@ async function refreshQuotes(): Promise<void> {
   }
 }
 
-function render() {
-  app.innerHTML = `
+function render(): void {
+  root.innerHTML = `
     <main class="shell">
       <header class="header">
         <div>
