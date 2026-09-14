@@ -81,6 +81,64 @@ describe('KISAccountAdapter', () => {
     expect(calls[1].tr_cont).toBe('N');
   });
 
+  it('maps paper buyable amount response', async () => {
+    let requestedPath = '';
+    let requestedHeaders: Record<string, string> = {};
+    const client = {
+      getJsonResponse: async <T>(path: string, headers: Record<string, string>) => {
+        requestedPath = path;
+        requestedHeaders = headers;
+        return {
+          data: {
+            rt_cd: '0',
+            output: {
+              nrcvb_buy_amt: '9998235',
+              max_buy_amt: '19996470',
+              ord_psbl_cash: '9998235',
+              nrcvb_buy_qty: '100',
+              max_buy_qty: '200',
+              psbl_qty_calc_unpr: '99999',
+            },
+          },
+          headers: new Headers(),
+        } as unknown as KISJsonResponse<T>;
+      },
+    } as never;
+
+    const adapter = new KISAccountAdapter(client, 'PAPER', '12345678-01');
+    const result = await adapter.getBuyable('005930', 99999, 'market');
+
+    expect(requestedPath).toContain('/uapi/domestic-stock/v1/trading/inquire-psbl-order?');
+    expect(requestedPath).toContain('PDNO=005930');
+    expect(requestedPath).toContain('ORD_UNPR=99999');
+    expect(requestedPath).toContain('ORD_DVSN=01');
+    expect(requestedHeaders.tr_id).toBe('VTTC8908R');
+    expect(result.orderBuyableAmount).toBe(9998235);
+    expect(result.maxBuyableAmount).toBe(19996470);
+    expect(result.orderCash).toBe(9998235);
+    expect(result.orderBuyableQuantity).toBe(100);
+    expect(result.maxBuyableQuantity).toBe(200);
+    expect(result.calculationPrice).toBe(99999);
+  });
+
+  it('uses live buyable TR ID for live accounts', async () => {
+    let trId = '';
+    const client = {
+      getJsonResponse: async <T>(_path: string, headers: Record<string, string>) => {
+        trId = headers.tr_id;
+        return {
+          data: { rt_cd: '0', output: {} },
+          headers: new Headers(),
+        } as unknown as KISJsonResponse<T>;
+      },
+    } as never;
+
+    const adapter = new KISAccountAdapter(client, 'LIVE', '12345678-01');
+    await adapter.getBuyable('005930', 70000, 'limit');
+
+    expect(trId).toBe('TTTC8908R');
+  });
+
   it('rejects malformed account numbers before calling KIS', async () => {
     const client = { getJsonResponse: async () => { throw new Error('must not call'); } } as never;
     const adapter = new KISAccountAdapter(client, 'PAPER', '1234');
