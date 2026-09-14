@@ -18,8 +18,8 @@
 - [x] 기존 Vite + TypeScript 대시보드 유지
 - [x] Cloudflare Worker 기반 KIS 시세 Proxy 초안 존재
 - [x] KIS Access Token 캐시 구조 존재
-- [ ] 전체 자동매매 아키텍처 문서 정비
-- [ ] KIS 계정/앱키 및 Worker Secret 설정
+- [x] 전체 자동매매 아키텍처 문서 정비
+- [x] KIS Worker Secret 이름을 `APP_KEY` / `APP_SECRET`으로 표준화
 - [ ] 실제 KIS 시세 연결 검증
 - [ ] 주문 도메인 및 주문 상태 모델
 - [ ] DRY_RUN 주문 시뮬레이터
@@ -35,14 +35,14 @@
 - [x] `docs/design.md` 작성
 - [x] `docs/api-strategy.md` 작성
 - [x] `docs/roadmap.md` 작성
-- [ ] README를 현재 프로젝트 목적에 맞게 갱신
+- [x] README를 현재 프로젝트 목적에 맞게 갱신
 
 ### Phase 1 — KIS 인증/어댑터 표준화
 목표: KIS 외부 API와 내부 도메인을 분리한다.
 
-- [ ] KIS 환경 구분: `PAPER` / `LIVE`
-- [ ] App Key / App Secret Secret 주입 구조 확정
-- [ ] Access Token 발급·캐시·만료 처리 강화
+- [x] KIS 환경 구분: `PAPER` / `LIVE`
+- [x] App Key / App Secret Secret 주입 구조 확정 (`APP_KEY`, `APP_SECRET`)
+- [x] Access Token 발급·캐시·만료 처리 강화
 - [ ] KIS API 공통 HTTP 클라이언트
 - [ ] 국내주식 시세 Adapter
 - [ ] KIS 오류 응답의 내부 오류 모델 변환
@@ -203,22 +203,23 @@ UNKNOWN → RECONCILING → 실제 상태 확정
 
 ## 4. 현재 다음 작업
 
-**Phase 1 — KIS 인증/어댑터 표준화**를 시작한다.
+**Phase 1 — KIS 인증/어댑터 표준화**를 계속 진행한다.
 
-현재 Worker에 이미 KIS 토큰 캐시와 국내주식 현재가 조회가 구현되어 있으므로, 기존 코드를 버리지 않고 이를 기반으로 인증/환경/오류 모델을 먼저 정리한다.
+현재 Worker는 사용자가 설정한 `APP_KEY` / `APP_SECRET`을 서버 측 Secret으로 사용하고, `KIS_ENVIRONMENT=PAPER`를 기본값으로 하여 모의투자 REST 도메인을 선택한다. `LIVE`는 코드상 지원하지만 기본값이 아니다.
 
 다음 구현 단위는 다음 순서로 진행한다.
 
-1. KIS 환경(`PAPER`/`LIVE`) 분리
-2. 공통 KIS 클라이언트/오류 모델 정의
-3. 인증 및 시세 Adapter 분리
-4. 테스트 가능한 구조로 정리
-5. 문서 업데이트
-6. 검증 후 커밋
+1. KIS 공통 HTTP 클라이언트
+2. 인증/시세 Adapter 분리
+3. 내부 오류 모델 및 timeout/retry/rate-limit 정책
+4. 테스트 가능한 구조 정비
+5. 실제 KIS 시세 통합 검증
+6. 문서 업데이트
+7. 검증 후 커밋
 
 ## 5. 완료 판정
 
-각 Phase는 다음 조건을 모두 만족해야 완료한다.
+각 Phase는 다음 조건을 모두 만족해야 한다.
 
 - 코드가 `main`에 반영됨
 - 관련 문서가 최신 코드와 일치함
