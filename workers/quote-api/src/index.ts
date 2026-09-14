@@ -36,11 +36,32 @@ function errorResponse(error: unknown, origin: string, scope: 'QUOTE' | 'ACCOUNT
     const status = error.code === 'KIS_TIMEOUT' ? 504 : error.code === 'KIS_RATE_LIMITED' ? 429 : 502;
     return json({ error: error.code }, status, origin);
   }
+
+  if (scope === 'ACCOUNT' && error instanceof Error) {
+    if (error.message === 'KIS account number must use 8-2 format') {
+      return json({ error: 'ACCOUNT_CONFIG_INVALID' }, 503, origin);
+    }
+    const match = error.message.match(/^KIS balance request failed: ([A-Za-z0-9_-]+)$/);
+    if (match) {
+      console.error('KIS account balance rejected', { msgCode: match[1] });
+      return json({ error: 'KIS_ACCOUNT_REJECTED', code: match[1] }, 502, origin);
+    }
+  }
+
+  if (scope === 'BUYABLE' && error instanceof Error) {
+    const match = error.message.match(/^KIS buyable request failed: ([A-Za-z0-9_-]+)$/);
+    if (match) {
+      console.error('KIS buyable request rejected', { msgCode: match[1] });
+      return json({ error: 'KIS_BUYABLE_REJECTED', code: match[1] }, 502, origin);
+    }
+  }
+
   const errorCode = scope === 'ACCOUNT'
     ? 'ACCOUNT_UNAVAILABLE'
     : scope === 'BUYABLE'
       ? 'BUYABLE_UNAVAILABLE'
       : 'QUOTE_UNAVAILABLE';
+  console.error(`${scope} request failed`, error instanceof Error ? error.message : 'unknown error');
   return json({ error: errorCode }, 502, origin);
 }
 
