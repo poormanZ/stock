@@ -20,6 +20,7 @@
 - [x] KIS Access Token 캐시 구조 존재
 - [x] 전체 자동매매 아키텍처 문서 정비
 - [x] KIS Worker Secret 이름을 `APP_KEY` / `APP_SECRET`으로 표준화
+- [x] 계좌 Secret 이름을 `ACCOUNT_NUM`으로 표준화
 - [x] 실제 KIS 시세 연결 검증
 - [ ] 주문 도메인 및 주문 상태 모델
 - [ ] DRY_RUN 주문 시뮬레이터
@@ -67,9 +68,10 @@
 목표: 실제 계좌 상태를 읽기 전용으로 정확하게 모델링한다.
 
 - [x] 계좌 조회 Adapter — `inquire-balance` (`TTTC8434R` / `VTTC8434R`)
-- [ ] 예수금/주문가능금액 모델 — 예수금은 구현, 종목별 주문가능금액은 매수가능조회 단계에서 추가
+- [x] 예수금/정산금액 모델 — 예수금, D+1, D+2 및 평가/순자산 반영
 - [x] 보유 종목/수량/평균단가 모델
 - [x] 서버 기준 포지션 모델
+- [x] 종목별 매수가능금액/수량 Adapter — `inquire-psbl-order` (`TTTC8908R` / `VTTC8908R`)
 - [ ] KIS 실제 상태와 내부 상태 비교
 - [ ] 불일치 경고 및 신규주문 차단
 
@@ -207,17 +209,17 @@ UNKNOWN → RECONCILING → 실제 상태 확정
 
 **Phase 3 — 계좌/잔고/포지션**을 진행한다.
 
-현재 Worker는 `APP_KEY` / `APP_SECRET` / `KIS_ACCOUNT_NO`를 서버 측 Secret으로 사용하도록 구성했고, `KIS_ENVIRONMENT=PAPER`를 기본값으로 유지한다. 브라우저에는 KIS 인증정보와 계좌번호를 전달하지 않는다.
+현재 Worker는 `APP_KEY` / `APP_SECRET` / `ACCOUNT_NUM`을 서버 측 Secret으로 사용하도록 구성했고, `KIS_ENVIRONMENT=PAPER`를 기본값으로 유지한다. 브라우저에는 KIS 인증정보와 계좌번호를 전달하지 않는다.
 
-이번 구현에서는 KIS 주식잔고조회 API의 연속조회 헤더(`tr_cont`)와 context key를 지원하고, 예수금·D+1·D+2 정산금액·총평가금액·순자산 및 보유종목을 내부 `AccountSnapshot` / `AccountPosition`으로 변환하는 읽기 전용 `/account` 엔드포인트를 추가했다. 계좌번호 Secret은 GitHub Actions에서 Worker로 전달하도록 연결했으며, 실제 `KIS_ACCOUNT_NO` Secret 등록과 `/account` 실계좌 조회 검증은 아직 남아 있다.
+이번 구현에서는 KIS 주식잔고조회 API의 연속조회 헤더(`tr_cont`)와 context key를 지원하고, 예수금·D+1·D+2 정산금액·총평가금액·순자산 및 보유종목을 내부 `AccountSnapshot` / `AccountPosition`으로 변환하는 읽기 전용 `/account` 엔드포인트를 제공한다. 또한 종목/주문단가/주문구분을 받아 KIS 매수가능조회(`inquire-psbl-order`)를 호출하는 `/buyable` 엔드포인트를 추가했다.
 
 다음 구현 단위:
 
-1. Worker Actions에서 계좌 조회 테스트/배포 성공 검증
-2. `KIS_ACCOUNT_NO` Secret 등록 여부 확인 및 `/account` 실제 PAPER 조회 검증
-3. 종목별 매수가능조회(`VTTC8908R` / `TTTC8908R`)를 이용한 주문가능금액 모델 추가
-4. 서버 내부 포지션 기준값과 KIS 실제 상태 reconciliation 모델 추가
-5. 불일치 시 신규주문 차단 계약 추가
+1. Worker Actions에서 `/buyable` 코드 테스트/배포 성공 검증
+2. 등록된 `ACCOUNT_NUM`으로 `/account` 및 `/buyable?symbol=005930&price=...` 실제 PAPER 조회 검증
+3. KIS 실제 상태와 서버 내부 포지션 reconciliation 모델 추가
+4. 불일치 시 신규주문 차단 계약 추가
+5. Phase 4 주문 도메인 모델 착수
 
 ## 5. 완료 판정
 
