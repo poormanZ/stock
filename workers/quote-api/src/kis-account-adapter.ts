@@ -11,6 +11,13 @@ type RawBalanceResponse = {
   ctx_area_nk100?: string;
 };
 
+type RawBuyableResponse = {
+  rt_cd?: string;
+  msg_cd?: string;
+  msg1?: string;
+  output?: RawBalanceItem;
+};
+
 export interface AccountPosition {
   symbol: string;
   name: string;
@@ -34,9 +41,26 @@ export interface AccountSnapshot {
   positions: AccountPosition[];
 }
 
+export interface BuyableOrder {
+  asOf: string;
+  environment: 'PAPER' | 'LIVE';
+  symbol: string;
+  orderType: 'market' | 'limit';
+  orderPrice: number;
+  orderBuyableAmount: number;
+  maxBuyableAmount: number;
+  orderCash: number;
+  orderBuyableQuantity: number;
+  maxBuyableQuantity: number;
+  calculationPrice: number;
+}
+
 const BALANCE_PATH = '/uapi/domestic-stock/v1/trading/inquire-balance';
+const BUYABLE_PATH = '/uapi/domestic-stock/v1/trading/inquire-psbl-order';
 const LIVE_TR_ID = 'TTTC8434R';
 const PAPER_TR_ID = 'VTTC8434R';
+const LIVE_BUYABLE_TR_ID = 'TTTC8908R';
+const PAPER_BUYABLE_TR_ID = 'VTTC8908R';
 const MAX_PAGES = 20;
 
 function toNumber(value: unknown): number {
@@ -69,6 +93,17 @@ function normalizePosition(item: RawBalanceItem): AccountPosition | null {
   };
 }
 
+function accountParts(accountNumber: string): { cano: string; accountProductCode: string } {
+  if (!/^\d{8}-?\d{2}$/.test(accountNumber)) {
+    throw new Error('KIS account number must use 8-2 format');
+  }
+  const normalized = accountNumber.replace('-', '');
+  return {
+    cano: normalized.slice(0, 8),
+    accountProductCode: normalized.slice(8, 10),
+  };
+}
+
 export class KISAccountAdapter {
   constructor(
     private readonly client: KISHttpClient,
@@ -77,12 +112,7 @@ export class KISAccountAdapter {
   ) {}
 
   async getSnapshot(): Promise<AccountSnapshot> {
-    if (!/^\d{8}-?\d{2}$/.test(this.accountNumber)) {
-      throw new Error('KIS account number must use 8-2 format');
-    }
-
-    const cano = this.accountNumber.replace('-', '').slice(0, 8);
-    const accountProductCode = this.accountNumber.replace('-', '').slice(8, 10);
+    const { cano, accountProductCode } = accountParts(this.accountNumber);
     const trId = this.environment === 'LIVE' ? LIVE_TR_ID : PAPER_TR_ID;
 
     const positions: AccountPosition[] = [];
@@ -147,6 +177,51 @@ export class KISAccountAdapter {
       totalEquity: toNumber(summary.tot_evlu_amt),
       netAssetValue: toNumber(summary.nass_amt),
       positions,
+    };
+  }
+
+  async getBuyable(symbol: string, orderPrice: number, orderType: 'market' | 'limit' = 'market'): Promise<BuyableOrder> {
+    if (!/^\d{6}$/.test(symbol)) throw new Error('KIS stock symbol must use 6 digits');
+    if (!Number.isFinite(orderPrice) || orderPrice <= 0) throw new Error('KIS order price must be positive');
+
+    const { cano, accountProductCode } = accountParts(this.accountNumber);
+    const trId = this.environment === 'LIVE' ? LIVE_BUYABLE_TR_ID : PAPER_BUYABLE_TR_ID;
+    const query = new URLSearchParams({
+      CANO: cano,
+      ACNT_PRDT_CD: accountProductCode,
+      PDNO: symbol,
+      ORD_UNPR: String(Math.trunc(orderPrice)),
+      ORD_DVSN: orderType === 'market' ? '01' : '00',
+      CMA_EVLU_AMT_ICLD_YN: 'N',
+      OVRS_ICLD_YN: 'N',
+    });
+
+    const response = await this.client.getJsonResponse<RawBuyableResponse>(
+      `${BUYABLE_PATH}?${query.toString()}`,
+      {
+        'content-type': 'application/json; charset=utf-8',
+        tr_id: trId,
+        custtype: 'P',
+      },
+    );
+
+    if (response.data.rt_cd && response.data.rt_cd !== '0') {
+      throw new Error(`KIS buyable request failed: ${response.data.msg_cd ?? 'UNKNOWN'}`);
+    }
+
+    const output = response.data.output ?? {};
+    return {
+      asOf: new Date().toISOString(),
+      environment: this.environment,
+      symbol,
+      orderType,
+      orderPrice: Math.trunc(orderPrice),
+      orderBuyableAmount: toNumber(output.nrcvb_buy_amt),
+      maxBuyableAmount: toNumber(output.max_buy_amt),
+      orderCash: toNumber(output.ord_psbl_cash),
+      orderBuyableQuantity: toNumber(output.nrcvb_buy_qty),
+      maxBuyableQuantity: toNumber(output.max_buy_qty),
+      calculationPrice: toNumber(output.psbl_qty_calc_unpr) || Math.trunc(orderPrice),
     };
   }
 }
