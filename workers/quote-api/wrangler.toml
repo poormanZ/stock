@@ -3,8 +3,8 @@ main = "src/index.ts"
 compatibility_date = "2026-09-04"
 
 [vars]
-# 기본값은 안전한 모의투자 환경. 실계좌는 명시적으로 LIVE로 전환해야 한다.
-KIS_ENVIRONMENT = "PAPER"
+# 실계좌 연동 환경. 주문 기능은 별도 단계에서 안전장치를 확인한 뒤 활성화한다.
+KIS_ENVIRONMENT = "LIVE"
 ALLOWED_ORIGIN = "https://poormanz.github.io"
 
 [secrets]
