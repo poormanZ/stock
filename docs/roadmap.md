@@ -20,7 +20,7 @@
 - [x] KIS Access Token 캐시 구조 존재
 - [x] 전체 자동매매 아키텍처 문서 정비
 - [x] KIS Worker Secret 이름을 `APP_KEY` / `APP_SECRET`으로 표준화
-- [ ] 실제 KIS 시세 연결 검증
+- [x] 실제 KIS 시세 연결 검증
 - [ ] 주문 도메인 및 주문 상태 모델
 - [ ] DRY_RUN 주문 시뮬레이터
 - [ ] 위험관리 및 Kill Switch
@@ -43,23 +43,23 @@
 - [x] KIS 환경 구분: `PAPER` / `LIVE`
 - [x] App Key / App Secret Secret 주입 구조 확정 (`APP_KEY`, `APP_SECRET`)
 - [x] Access Token 발급·캐시·만료 처리 강화
-- [ ] KIS API 공통 HTTP 클라이언트
-- [ ] 국내주식 시세 Adapter
-- [ ] KIS 오류 응답의 내부 오류 모델 변환
-- [ ] timeout / retry / rate-limit 정책
+- [x] KIS API 공통 HTTP 클라이언트
+- [x] 국내주식 시세 Adapter
+- [x] KIS 오류 응답의 내부 오류 모델 변환
+- [x] timeout / retry / rate-limit 정책
 - [ ] 인증정보 로그 마스킹 테스트
 
 ### Phase 2 — 시세 서비스 안정화
 목표: 실제 시세를 안전하게 조회하고 UI에 제공한다.
 
 - [ ] `/quote`, `/quotes` 계약 확정
-- [ ] 종목 코드 검증
-- [ ] KIS 시세 응답 검증 및 변환
-- [ ] 장 상태/데이터 시각 처리
+- [x] 종목 코드 검증
+- [x] KIS 시세 응답 검증 및 변환
+- [x] 장 상태/데이터 시각 처리 기반 (`asOf` 날짜+체결시각 매핑)
 - [ ] stale/missing 데이터 정책
-- [ ] Cloudflare Worker 배포
+- [x] Cloudflare Worker 배포
 - [ ] GitHub Pages → Worker 연동
-- [ ] 실제 KIS 시세 통합 테스트
+- [x] 실제 KIS 시세 통합 테스트
 
 ### Phase 3 — 계좌/잔고/포지션
 목표: 실제 계좌 상태를 읽기 전용으로 정확하게 모델링한다.
@@ -203,19 +203,17 @@ UNKNOWN → RECONCILING → 실제 상태 확정
 
 ## 4. 현재 다음 작업
 
-**Phase 1 — KIS 인증/어댑터 표준화**를 계속 진행한다.
+**Phase 1 — KIS 인증/어댑터 표준화**는 공통 HTTP 클라이언트와 국내주식 시세 Adapter까지 구현했다.
 
 현재 Worker는 사용자가 설정한 `APP_KEY` / `APP_SECRET`을 서버 측 Secret으로 사용하고, `KIS_ENVIRONMENT=PAPER`를 기본값으로 하여 모의투자 REST 도메인을 선택한다. `LIVE`는 코드상 지원하지만 기본값이 아니다.
 
 다음 구현 단위는 다음 순서로 진행한다.
 
-1. KIS 공통 HTTP 클라이언트
-2. 인증/시세 Adapter 분리
-3. 내부 오류 모델 및 timeout/retry/rate-limit 정책
-4. 테스트 가능한 구조 정비
-5. 실제 KIS 시세 통합 검증
-6. 문서 업데이트
-7. 검증 후 커밋
+1. 인증정보 로그 마스킹 테스트
+2. `/quote`, `/quotes` 응답 계약 및 stale/missing 정책 확정
+3. GitHub Pages → Worker 연동
+4. Phase 2 시세 서비스 안정화 완료 후 계좌/잔고 읽기 전용 모델로 진행
+5. 문서 업데이트 및 검증
 
 ## 5. 완료 판정
 
