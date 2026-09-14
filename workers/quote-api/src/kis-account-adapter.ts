@@ -60,6 +60,11 @@ function validateAccountParts(cano: string, accountProductCode: string): void {
   if (!/^\d{8}$/.test(cano.trim())) throw new Error('KIS account CANO must use 8 digits');
   if (!/^\d{2}$/.test(accountProductCode.trim())) throw new Error('KIS account product code must use 2 digits');
 }
+function kisRequestError(prefix: string, response: { msg_cd?: string; msg1?: string }): Error {
+  const code = response.msg_cd ?? 'UNKNOWN';
+  const message = response.msg1?.trim();
+  return new Error(`${prefix}: ${code}${message ? ` - ${message}` : ''}`);
+}
 
 export class KISAccountAdapter {
   constructor(private readonly client: KISHttpClient, private readonly environment: 'PAPER' | 'LIVE', private readonly cano: string, private readonly accountProductCode: string) {}
@@ -70,7 +75,7 @@ export class KISAccountAdapter {
     const response = await this.client.getJsonResponse<RawAccountAssetResponse>(`${ACCOUNT_ASSET_PATH}?${query.toString()}`, {
       'content-type': 'application/json; charset=utf-8', tr_id: ACCOUNT_ASSET_TR_ID, custtype: 'P',
     });
-    if (response.data.rt_cd && response.data.rt_cd !== '0') throw new Error(`KIS account asset request failed: ${response.data.msg_cd ?? 'UNKNOWN'}`);
+    if (response.data.rt_cd && response.data.rt_cd !== '0') throw kisRequestError('KIS account asset request failed', response.data);
     return { asOf: new Date().toISOString(), environment: this.environment, canoConfigured: true, productCodeConfigured: true, output1: response.data.output1 ?? [], output2: response.data.output2 ?? {} };
   }
 
@@ -81,7 +86,7 @@ export class KISAccountAdapter {
     while (pages < MAX_PAGES) {
       const query = new URLSearchParams({ CANO: cano, ACNT_PRDT_CD: accountProductCode, AFHR_FLPR_YN: 'N', OFL_YN: '', INQR_DVSN: '01', UNPR_DVSN: '01', FUND_STTL_ICLD_YN: 'N', FNCG_AMT_AUTO_RDPT_YN: 'N', PRCS_DVSN: '00', CTX_AREA_FK100: contextForward, CTX_AREA_NK100: contextNext });
       const response = await this.client.getJsonResponse<RawBalanceResponse>(`${BALANCE_PATH}?${query.toString()}`, { 'content-type': 'application/json; charset=utf-8', tr_id: trId, custtype: 'P', tr_cont: continuation });
-      if (response.data.rt_cd && response.data.rt_cd !== '0') throw new Error(`KIS balance request failed: ${response.data.msg_cd ?? 'UNKNOWN'}`);
+      if (response.data.rt_cd && response.data.rt_cd !== '0') throw kisRequestError('KIS balance request failed', response.data);
       for (const item of response.data.output1 ?? []) { const position = normalizePosition(item); if (position) positions.push(position); }
       summary = firstObject(response.data.output2); contextForward = String(response.data.ctx_area_fk100 ?? ''); contextNext = String(response.data.ctx_area_nk100 ?? '');
       const next = response.headers.get('tr_cont') ?? ''; if (next !== 'F' && next !== 'M') break; continuation = 'N'; pages += 1;
@@ -96,7 +101,7 @@ export class KISAccountAdapter {
     const trId = this.environment === 'LIVE' ? LIVE_BUYABLE_TR_ID : PAPER_BUYABLE_TR_ID;
     const query = new URLSearchParams({ CANO: cano, ACNT_PRDT_CD: accountProductCode, PDNO: symbol, ORD_UNPR: String(Math.trunc(orderPrice)), ORD_DVSN: orderType === 'market' ? '01' : '00', CMA_EVLU_AMT_ICLD_YN: 'N', OVRS_ICLD_YN: 'N' });
     const response = await this.client.getJsonResponse<RawBuyableResponse>(`${BUYABLE_PATH}?${query.toString()}`, { 'content-type': 'application/json; charset=utf-8', tr_id: trId, custtype: 'P' });
-    if (response.data.rt_cd && response.data.rt_cd !== '0') throw new Error(`KIS buyable request failed: ${response.data.msg_cd ?? 'UNKNOWN'}`);
+    if (response.data.rt_cd && response.data.rt_cd !== '0') throw kisRequestError('KIS buyable request failed', response.data);
     const output = response.data.output ?? {};
     return { asOf: new Date().toISOString(), environment: this.environment, symbol, orderType, orderPrice: Math.trunc(orderPrice), orderBuyableAmount: toNumber(output.nrcvb_buy_amt), maxBuyableAmount: toNumber(output.max_buy_amt), orderCash: toNumber(output.ord_psbl_cash), orderBuyableQuantity: toNumber(output.nrcvb_buy_qty), maxBuyableQuantity: toNumber(output.max_buy_qty), calculationPrice: toNumber(output.psbl_qty_calc_unpr) || Math.trunc(orderPrice) };
   }
