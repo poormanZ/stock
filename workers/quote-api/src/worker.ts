@@ -5,6 +5,7 @@ import { KISOrderAdapter } from './kis-order-adapter';
 import { KISTokenBroker } from './kis-token-broker';
 import { InternalStateStoreDO } from './internal-state-store';
 import { resyncPaperOrders } from './paper-order-reconciliation';
+import { getMarketSession } from './market-session';
 import type { Order } from './order-domain';
 
 export { KISTokenBroker } from './kis-token-broker';
@@ -124,6 +125,18 @@ export default {
 
     if (url.pathname === '/paper/reconcile' && request.method === 'POST') {
       return handlePaperReconcile(env, origin);
+    }
+
+    if (url.pathname === '/paper/orders' && request.method === 'POST' && getEnvironment(env) === 'PAPER') {
+      const session = getMarketSession();
+      if (!session.isOpen) {
+        return json({
+          error: 'MARKET_SESSION_CLOSED',
+          status: session.status,
+          asOf: session.asOf,
+          timeZone: session.timeZone,
+        }, 409, origin);
+      }
     }
 
     return app.fetch(request, env);
