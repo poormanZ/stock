@@ -32,7 +32,19 @@ export function resyncPaperOrders(internalOrders: Order[], brokerOrders: OrderRe
 
     updated += 1;
     if (order.status === nextStatus) {
-      return transitionOrder(order, nextStatus, { executedQuantity, averageExecutedPrice });
+      if (nextStatus === 'FILLED' && executedQuantity !== order.quantity) throw new Error('FILLED_QUANTITY_MISMATCH');
+      if (nextStatus === 'PARTIALLY_FILLED' && (executedQuantity <= 0 || executedQuantity >= order.quantity)) {
+        throw new Error('INVALID_PARTIAL_FILL_QUANTITY');
+      }
+      if (!Number.isInteger(executedQuantity) || executedQuantity < 0 || executedQuantity > order.quantity) {
+        throw new Error('INVALID_EXECUTED_QUANTITY');
+      }
+      return {
+        ...order,
+        executedQuantity,
+        averageExecutedPrice,
+        updatedAt: new Date().toISOString(),
+      };
     }
 
     return transitionOrder(order, nextStatus, { executedQuantity, averageExecutedPrice });
