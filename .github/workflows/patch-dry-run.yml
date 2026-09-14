@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   patch:
-    if: "!contains(github.event.head_commit.message, 'fix: isolate DRY_RUN from KIS trading-hours dependencies')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,94 +16,101 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Skip after patch commit
+        if: contains(github.event.head_commit.message, 'fix: isolate DRY_RUN from KIS trading-hours dependencies')
+        run: echo 'DRY_RUN isolation patch already committed.'
+
       - name: Patch DRY_RUN route
-        shell: python
+        if: ${{ !contains(github.event.head_commit.message, 'fix: isolate DRY_RUN from KIS trading-hours dependencies') }}
         run: |
+          python - <<'PY'
           from pathlib import Path
           p = Path('workers/quote-api/src/index.ts')
           s = p.read_text(encoding='utf-8')
-          start = """    if (url.pathname === '/dry-run/orders' && request.method === 'POST') {"""
-          end = """    if (url.pathname === '/dry-run/reset' && request.method === 'POST') {"""
+          start = "    if (url.pathname === '/dry-run/orders' && request.method === 'POST') {"
+          end = "    if (url.pathname === '/dry-run/reset' && request.method === 'POST') {"
           a = s.index(start)
           b = s.index(end, a)
           replacement = '''    if (url.pathname === '/dry-run/orders' && request.method === 'POST') {
-      const id = env.DRY_RUN_STATE_STORE.idFromName('primary');
-      const store = env.DRY_RUN_STATE_STORE.get(id);
-      const body = await request.json().catch(() => null);
-      if (!body || typeof body !== 'object') return json({ error: 'INVALID_DRY_RUN_REQUEST' }, 400, origin);
+            const id = env.DRY_RUN_STATE_STORE.idFromName('primary');
+            const store = env.DRY_RUN_STATE_STORE.get(id);
+            const body = await request.json().catch(() => null);
+            if (!body || typeof body !== 'object') return json({ error: 'INVALID_DRY_RUN_REQUEST' }, 400, origin);
 
-      const candidate = body as {
-        request?: CreateOrderRequest;
-        referencePrice?: number;
-        fillQuantity?: number;
-        config?: unknown;
-      };
+            const candidate = body as {
+              request?: CreateOrderRequest;
+              referencePrice?: number;
+              fillQuantity?: number;
+              config?: unknown;
+            };
 
-      try {
-        assertOrderRequest(candidate.request as CreateOrderRequest);
-      } catch {
-        return json({ error: 'INVALID_ORDER' }, 400, origin);
-      }
+            try {
+              assertOrderRequest(candidate.request as CreateOrderRequest);
+            } catch {
+              return json({ error: 'INVALID_ORDER' }, 400, origin);
+            }
 
-      if (!Number.isFinite(candidate.referencePrice)) return json({ error: 'INVALID_REFERENCE_PRICE' }, 400, origin);
+            if (!Number.isFinite(candidate.referencePrice)) return json({ error: 'INVALID_REFERENCE_PRICE' }, 400, origin);
 
-      try {
-        const riskResponse = await riskStore.fetch('https://risk-state/');
-        const killSwitch = (await riskResponse.json()) as { active: boolean };
-        const dryResponse = await store.fetch('https://dry-run-state/');
-        if (!dryResponse.ok) throw new Error('DRY_RUN_STATE_UNAVAILABLE');
-        const dryState = (await dryResponse.json()) as {
-          positions: { symbol: string; quantity: number }[];
-          orders: import('./order-domain').Order[];
-          dailyLoss?: number;
-        };
+            try {
+              const riskResponse = await riskStore.fetch('https://risk-state/');
+              const killSwitch = (await riskResponse.json()) as { active: boolean };
+              const dryResponse = await store.fetch('https://dry-run-state/');
+              if (!dryResponse.ok) throw new Error('DRY_RUN_STATE_UNAVAILABLE');
+              const dryState = (await dryResponse.json()) as {
+                positions: { symbol: string; quantity: number }[];
+                orders: import('./order-domain').Order[];
+                dailyLoss?: number;
+              };
 
-        const now = new Date().toISOString();
-        const risk = checkRisk({
-          request: candidate.request as CreateOrderRequest,
-          state: dryState,
-          market: {
-            referencePrice: candidate.referencePrice as number,
-            quoteAsOf: now,
-            now,
-          },
-          config: DEFAULT_RISK_CONFIG,
-          killSwitchActive: killSwitch.active,
-          reconciliationAllowed: true,
-          apiHealthy: true,
-        });
-        if (!risk.allowed) return json({ error: risk.reason, risk }, 409, origin);
+              const now = new Date().toISOString();
+              const risk = checkRisk({
+                request: candidate.request as CreateOrderRequest,
+                state: dryState,
+                market: { referencePrice: candidate.referencePrice as number, quoteAsOf: now, now },
+                config: DEFAULT_RISK_CONFIG,
+                killSwitchActive: killSwitch.active,
+                reconciliationAllowed: true,
+                apiHealthy: true,
+              });
+              if (!risk.allowed) return json({ error: risk.reason, risk }, 409, origin);
 
-        return store.fetch(
-          new Request('https://dry-run-state/', {
-            method: 'POST',
-            body: JSON.stringify({ ...candidate, action: 'order' }),
-            headers: { 'content-type': 'application/json' },
-          }),
-        );
-      } catch (error) {
-        if (error instanceof Error && error.message === 'DRY_RUN_STATE_UNAVAILABLE') {
-          return json({ error: 'DRY_RUN_UNAVAILABLE', message: error.message }, 503, origin);
-        }
-        console.error('DRY_RUN order failed', error);
-        return json({ error: 'DRY_RUN_UNAVAILABLE', message: error instanceof Error ? error.message.slice(0, 300) : 'unknown error' }, 503, origin);
-      }
-    }
+              return store.fetch(new Request('https://dry-run-state/', {
+                method: 'POST',
+                body: JSON.stringify({ ...candidate, action: 'order' }),
+                headers: { 'content-type': 'application/json' },
+              }));
+            } catch (error) {
+              console.error('DRY_RUN order failed', error);
+              return json({ error: 'DRY_RUN_UNAVAILABLE', message: error instanceof Error ? error.message.slice(0, 300) : 'unknown error' }, 503, origin);
+            }
+          }
 
 '''
           p.write_text(s[:a] + replacement + s[b:], encoding='utf-8')
+          PY
 
       - name: Verify patch
+        if: ${{ !contains(github.event.head_commit.message, 'fix: isolate DRY_RUN from KIS trading-hours dependencies') }}
         run: |
-          grep -n "dry-run/orders" workers/quote-api/src/index.ts
-          ! grep -A35 "dry-run/orders" workers/quote-api/src/index.ts | grep -q "loadReconciliation"
-          ! grep -A35 "dry-run/orders" workers/quote-api/src/index.ts | grep -q "KISQuoteAdapter"
+          python - <<'PY'
+          from pathlib import Path
+          s = Path('workers/quote-api/src/index.ts').read_text(encoding='utf-8')
+          a = s.index("if (url.pathname === '/dry-run/orders'")
+          b = s.index("if (url.pathname === '/dry-run/reset'", a)
+          block = s[a:b]
+          assert 'loadReconciliation' not in block
+          assert 'KISQuoteAdapter' not in block
+          assert 'riskResponse' in block
+          print('DRY_RUN route isolation verified')
+          PY
 
       - name: Commit patch
+        if: ${{ !contains(github.event.head_commit.message, 'fix: isolate DRY_RUN from KIS trading-hours dependencies') }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add workers/quote-api/src/index.ts
           git diff --cached --quiet && exit 0
-          git commit -m "fix: isolate DRY_RUN from KIS trading-hours dependencies"
+          git commit -m 'fix: isolate DRY_RUN from KIS trading-hours dependencies'
           git push origin main
