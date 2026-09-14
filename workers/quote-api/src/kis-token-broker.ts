@@ -16,8 +16,7 @@ interface TokenBrokerEnv {
 const LIVE_BASE_URL = 'https://openapi.koreainvestment.com:9443';
 const PAPER_BASE_URL = 'https://openapivts.koreainvestment.com:29443';
 const TOKEN_PATH = '/oauth2/tokenP';
-const TOKEN_SAFETY_MARGIN_MS = 5 * 60 * 1000;
-const TOKEN_CACHE_TTL_SECONDS = 24 * 60 * 60;
+const TOKEN_VALIDITY_SECONDS = 24 * 60 * 60;
 
 function getBaseUrl(env: TokenBrokerEnv): string {
   if (env.KIS_BASE_URL) return env.KIS_BASE_URL.replace(/\/$/, '');
@@ -25,11 +24,9 @@ function getBaseUrl(env: TokenBrokerEnv): string {
 }
 
 function toExpiry(value?: string): number {
-  if (!value) return Date.now() + TOKEN_CACHE_TTL_SECONDS * 1000 - TOKEN_SAFETY_MARGIN_MS;
+  if (!value) return Date.now() + TOKEN_VALIDITY_SECONDS * 1000;
   const parsed = Date.parse(value.replace(' ', 'T'));
-  return Number.isFinite(parsed)
-    ? Math.max(Date.now() + 60_000, parsed - TOKEN_SAFETY_MARGIN_MS)
-    : Date.now() + TOKEN_CACHE_TTL_SECONDS * 1000 - TOKEN_SAFETY_MARGIN_MS;
+  return Number.isFinite(parsed) ? parsed : Date.now() + TOKEN_VALIDITY_SECONDS * 1000;
 }
 
 export class KISTokenBroker extends DurableObject<TokenBrokerEnv> {
@@ -83,7 +80,7 @@ export class KISTokenBroker extends DurableObject<TokenBrokerEnv> {
     };
     const ttl = Math.max(60, Math.ceil((record.expiresAt - Date.now()) / 1000));
     await this.env.KIS_TOKEN_CACHE.put(key, JSON.stringify(record), {
-      expirationTtl: Math.min(ttl, TOKEN_CACHE_TTL_SECONDS),
+      expirationTtl: Math.min(ttl, TOKEN_VALIDITY_SECONDS),
     });
     return record;
   }
