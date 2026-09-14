@@ -1,5 +1,6 @@
 import { KISHttpClient, KISHttpError } from './kis-http-client';
 import { KISQuoteAdapter } from './kis-quote-adapter';
+import { parseSymbols, QUOTE_MAX_SYMBOLS, validateSymbols } from './quote-contract';
 
 type KISEnvironment = 'PAPER' | 'LIVE';
 
@@ -26,10 +27,6 @@ function json(data: unknown, status = 200, origin = '*'): Response {
 
 function getEnvironment(env: Env): KISEnvironment {
   return env.KIS_ENVIRONMENT === 'LIVE' ? 'LIVE' : 'PAPER';
-}
-
-function parseSymbols(value: string | null): string[] {
-  return [...new Set((value ?? '').split(',').map((symbol) => symbol.trim()).filter(Boolean))];
 }
 
 function errorResponse(error: unknown, origin: string): Response {
@@ -66,8 +63,8 @@ export default {
       ? parseSymbols(url.searchParams.get('symbol'))
       : parseSymbols(url.searchParams.get('symbols'));
 
-    if (symbols.length === 0 || symbols.length > 20 || symbols.some((symbol) => !/^\d{6}$/.test(symbol))) {
-      return json({ error: 'INVALID_SYMBOLS' }, 400, origin);
+    if (!validateSymbols(symbols)) {
+      return json({ error: 'INVALID_SYMBOLS', maxSymbols: QUOTE_MAX_SYMBOLS }, 400, origin);
     }
 
     try {
