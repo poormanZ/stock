@@ -155,7 +155,12 @@ export class KISHttpClient {
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const response = await this.fetchWithTimeout(url, {
-        headers: { authorization: `Bearer ${token}`, ...headers },
+        headers: {
+          authorization: `Bearer ${token}`,
+          appkey: this.options.appKey,
+          appsecret: this.options.appSecret,
+          ...headers,
+        },
       });
 
       if (response.ok) {
