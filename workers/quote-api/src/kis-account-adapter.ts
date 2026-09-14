@@ -94,10 +94,11 @@ function normalizePosition(item: RawBalanceItem): AccountPosition | null {
 }
 
 function accountParts(accountNumber: string): { cano: string; accountProductCode: string } {
-  if (!/^\d{8}-?\d{2}$/.test(accountNumber)) {
+  const trimmed = accountNumber.trim();
+  if (!/^\d{8}-?\d{2}$/.test(trimmed)) {
     throw new Error('KIS account number must use 8-2 format');
   }
-  const normalized = accountNumber.replace('-', '');
+  const normalized = trimmed.replace('-', '');
   return {
     cano: normalized.slice(0, 8),
     accountProductCode: normalized.slice(8, 10),
