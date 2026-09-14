@@ -57,8 +57,8 @@ jobs:
           secrets: |
             APP_KEY
             APP_SECRET
-            KIS_ACCOUNT_NO
+            ACCOUNT_NUM
         env:
           APP_KEY: ${{ secrets.APP_KEY }}
           APP_SECRET: ${{ secrets.APP_SECRET }}
-          KIS_ACCOUNT_NO: ${{ secrets.KIS_ACCOUNT_NO }}
+          ACCOUNT_NUM: ${{ secrets.ACCOUNT_NUM }}
