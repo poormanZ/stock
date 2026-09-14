@@ -128,7 +128,7 @@ export class KISAccountAdapter {
         CANO: cano,
         ACNT_PRDT_CD: accountProductCode,
         AFHR_FLPR_YN: 'N',
-        OFL_YN: 'N',
+        OFL_YN: '',
         INQR_DVSN: '01',
         UNPR_DVSN: '01',
         FUND_STTL_ICLD_YN: 'N',
