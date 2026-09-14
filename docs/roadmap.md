@@ -67,7 +67,7 @@
 - [x] 거부/취소/UNKNOWN 상태 전이
 - [x] 주문 생성 → 전송의 PAPER 기본 흐름
 - [ ] 주문 생성 → 전송 → 조회 → 취소 전체 흐름
-- [ ] 주문 상태 재동기화
+- [x] 주문 상태 재동기화
 
 ## Phase 5 — DRY_RUN
 - [x] 가상 현금/보유 포지션
@@ -92,11 +92,11 @@
 
 ## Phase 7 — 모의투자 자동매매
 - [x] 모의투자 주문 Adapter
-- [ ] 주문/체결 조회
+- [x] 주문/체결 조회
 - [x] LIVE/PAPER 환경 분리 검증
 - [ ] 장 운영시간 처리
 - [x] 실패/UNKNOWN 복구 1차 처리
-- [ ] 부분체결/취소 복구
+- [x] 부분체결/취소 복구
 - [ ] 일정 기간 안정성 검증
 
 ## Phase 8 — 전략 / 백테스트
@@ -146,6 +146,6 @@
 
 ## 현재 다음 작업
 
-**Phase 7 — 주문/체결 조회 및 PAPER 상태 재동기화**.
+**Phase 7 — 장 운영시간 처리 및 PAPER 주문 안정성 검증**.
 
-원칙은 `주문 형식 검증 → reconciliation Gate → Risk Manager → PAPER 주문` 순서이며, 현재 Worker의 `KIS_ENVIRONMENT`는 `LIVE`이므로 `/paper/orders`는 실제로 주문을 전송하지 않고 환경 오류로 차단된다. LIVE 주문 API는 계속 추가하지 않는다.
+현재 `/paper/reconcile`는 PAPER 환경에서만 동작하며 KIS 당일 주문/체결 내역을 내부 `Order` 상태에 재동기화한다. 부분체결/체결완료/취소 상태를 복구하고, KIS에만 존재하는 주문은 자동 생성하지 않고 `unresolved`로 반환한다. 현재 Worker의 `KIS_ENVIRONMENT`는 `LIVE`이므로 `/paper/orders`와 `/paper/reconcile`는 실제 운영 환경에서 PAPER 작업을 수행하지 않는다. LIVE 주문 API는 계속 추가하지 않는다.
