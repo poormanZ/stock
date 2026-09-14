@@ -1,3 +1,5 @@
+import type { KISTokenBroker } from './kis-token-broker';
+
 export type KISEnvironment = 'PAPER' | 'LIVE';
 
 export type KISHttpErrorCode =
@@ -25,12 +27,18 @@ interface KISHttpClientOptions {
   baseUrl?: string;
   timeoutMs?: number;
   minRequestIntervalMs?: number;
+  tokenCache?: KVNamespace;
+  tokenBroker?: DurableObjectNamespace<KISTokenBroker>;
 }
 
 type KISTokenResponse = {
   access_token?: string;
   access_token_token_expired?: string;
 };
+
+type CachedToken = { value: string; expiresAt: number; baseUrl: string };
+
+type BrokerTokenResponse = { accessToken?: string; expiresAt?: number; error?: string };
 
 export interface KISJsonResponse<T> {
   data: T;
@@ -44,7 +52,7 @@ const TOKEN_SAFETY_MARGIN_MS = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 8_000;
 const DEFAULT_PAPER_INTERVAL_MS = 1_100;
 
-let cachedToken: { value: string; expiresAt: number; baseUrl: string } | null = null;
+let cachedToken: CachedToken | null = null;
 let tokenPromise: Promise<string> | null = null;
 let requestChain = Promise.resolve();
 let nextRequestAt = 0;
@@ -110,12 +118,43 @@ export class KISHttpClient {
     if (cachedToken && cachedToken.baseUrl === this.baseUrl && cachedToken.expiresAt > Date.now()) {
       return cachedToken.value;
     }
+
     if (!tokenPromise) {
-      tokenPromise = this.issueAccessToken().finally(() => {
+      tokenPromise = this.loadAccessToken().finally(() => {
         tokenPromise = null;
       });
     }
     return tokenPromise;
+  }
+
+  private async loadAccessToken(): Promise<string> {
+    if (this.options.tokenCache) {
+      const cached = await this.options.tokenCache.get<CachedToken>(this.cacheKey(), 'json');
+      if (cached?.value && cached.expiresAt > Date.now()) {
+        cachedToken = cached;
+        return cached.value;
+      }
+    }
+
+    if (this.options.tokenBroker) {
+      const id = this.options.tokenBroker.idFromName(`KIS:${this.baseUrl}`);
+      const response = await id
+        .fetch('https://kis-token-broker/token')
+        .catch(() => null);
+      if (response?.ok) {
+        const body = (await response.json()) as BrokerTokenResponse;
+        if (body.accessToken && body.expiresAt && body.expiresAt > Date.now()) {
+          cachedToken = { value: body.accessToken, expiresAt: body.expiresAt, baseUrl: this.baseUrl };
+          return body.accessToken;
+        }
+      }
+    }
+
+    return this.issueAccessToken();
+  }
+
+  private cacheKey(): string {
+    return `kis-access-token:${this.baseUrl}`;
   }
 
   private async issueAccessToken(): Promise<string> {
@@ -145,11 +184,17 @@ export class KISHttpClient {
       throw new KISHttpError('KIS_AUTH_FAILED', 'KIS access token was not returned');
     }
 
-    cachedToken = {
+    const record: CachedToken = {
       value: body.access_token,
       expiresAt: toExpiry(body.access_token_token_expired),
       baseUrl: this.baseUrl,
     };
+    cachedToken = record;
+    if (this.options.tokenCache) {
+      await this.options.tokenCache.put(this.cacheKey(), JSON.stringify(record), {
+        expirationTtl: Math.max(60, Math.ceil((record.expiresAt - Date.now()) / 1000)),
+      });
+    }
     return body.access_token;
   }
 
