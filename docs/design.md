@@ -46,7 +46,7 @@ Cloudflare Worker
 KIS Open API
 ```
 
-현재 Worker에는 다음 기능의 초안이 있다.
+현재 Worker에는 다음 기능이 구현되어 있다.
 
 - `GET /quote?symbol=005930`
 - `GET /quotes?symbols=005930,000660`
@@ -54,6 +54,8 @@ KIS Open API
 - 동시 token 발급 요청 합치기
 - 국내주식 현재가 API 호출
 - 내부 `StockQuote` 형태로 응답 변환
+- `PAPER` / `LIVE` KIS REST 도메인 분리
+- 서버 측 Secret `APP_KEY` / `APP_SECRET` 사용
 
 단, 현재 구현은 **시세 조회 단계**이며 자동 주문 시스템으로 완료된 상태가 아니다.
 
@@ -181,12 +183,20 @@ LIVE
 ### PAPER
 - KIS 모의투자 환경 사용
 - 인증/시세/주문/체결 API의 실제 통합 검증
+- 현재 Worker의 기본 `KIS_ENVIRONMENT` 값
 
 ### LIVE
 - 실계좌 사용
 - 기본값으로 선택될 수 없음
 - 별도 `LIVE_TRADING_ENABLED` 같은 명시적 활성화 조건 필요
 - 계좌 환경과 API 환경이 일치하지 않으면 즉시 차단
+
+KIS REST 도메인은 `KIS_ENVIRONMENT`로 선택한다.
+
+```text
+PAPER → https://openapivts.koreainvestment.com:29443
+LIVE  → https://openapi.koreainvestment.com:9443
+```
 
 ## 5. 데이터 모델
 
@@ -295,14 +305,14 @@ UNKNOWN → RECONCILING → 실제 상태 확정
 다음 값은 Git에 절대 저장하지 않는다.
 
 ```text
-KIS_APP_KEY
-KIS_APP_SECRET
+APP_KEY
+APP_SECRET
 KIS_ACCESS_TOKEN
 계좌번호
 개인 식별정보
 ```
 
-Cloudflare Worker Secret 또는 배포 플랫폼의 안전한 Secret 저장소에서 주입한다.
+Cloudflare Worker Secret 또는 배포 플랫폼의 안전한 Secret 저장소에서 `APP_KEY` / `APP_SECRET`을 주입한다.
 
 브라우저에는 KIS App Secret을 전달하지 않는다.
 
