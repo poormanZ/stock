@@ -5,6 +5,8 @@ import { KISQuoteAdapter } from './kis-quote-adapter';
 import { KISTokenBroker } from './kis-token-broker';
 import { InternalStateStoreDO } from './internal-state-store';
 import { DryRunStateStoreDO } from './dry-run-simulator';
+import { assertOrderRequest, type CreateOrderRequest } from './order-domain';
+import { checkNewOrderGate } from './order-gate';
 import { parseSymbols, QUOTE_MAX_SYMBOLS, validateSymbols } from './quote-contract';
 import { reconcile } from './reconciliation';
 
@@ -33,6 +35,7 @@ function errorResponse(error: unknown, origin: string, scope: 'QUOTE' | 'ACCOUNT
   if ((scope === 'ACCOUNT' || scope === 'ACCOUNT_ASSET') && error instanceof Error) { if (error.message === 'KIS account CANO must use 8 digits' || error.message === 'KIS account product code must use 2 digits') return json({ error: 'ACCOUNT_CONFIG_INVALID' }, 503, origin); const match = error.message.match(/^KIS (balance|account asset) request failed: ([A-Za-z0-9_-]+)$/); if (match) { console.error('KIS account request rejected', { msgCode: match[2] }); return json({ error: scope === 'ACCOUNT_ASSET' ? 'KIS_ACCOUNT_ASSET_REJECTED' : 'KIS_ACCOUNT_REJECTED', code: match[2] }, 502, origin); } }
   if (scope === 'BUYABLE' && error instanceof Error) { const match = error.message.match(/^KIS buyable request failed: ([A-Za-z0-9_-]+)$/); if (match) { console.error('KIS buyable request rejected', { msgCode: match[1] }); return json({ error: 'KIS_BUYABLE_REJECTED', code: match[1] }, 502, origin); } }
   if (scope === 'ORDERS' && error instanceof Error) { const match = error.message.match(/^KIS order history request failed: ([A-Za-z0-9_-]+)$/); if (match) { console.error('KIS order history request rejected', { msgCode: match[1] }); return json({ error: 'KIS_ORDER_HISTORY_REJECTED', code: match[1] }, 502, origin); } }
+  if (scope === 'RECONCILIATION' && error instanceof Error && error.message === 'INTERNAL_STATE_UNAVAILABLE') return json({ error: 'RECONCILIATION_UNAVAILABLE', message: error.message }, 503, origin);
   const errorCode = scope === 'ACCOUNT' ? 'ACCOUNT_UNAVAILABLE' : scope === 'ACCOUNT_ASSET' ? 'ACCOUNT_ASSET_UNAVAILABLE' : scope === 'BUYABLE' ? 'BUYABLE_UNAVAILABLE' : scope === 'ORDERS' ? 'ORDERS_UNAVAILABLE' : scope === 'RECONCILIATION' ? 'RECONCILIATION_UNAVAILABLE' : 'QUOTE_UNAVAILABLE';
   console.error(`${scope} request failed`, error instanceof Error ? error.message : 'unknown error'); return json({ error: errorCode, message: error instanceof Error ? error.message.slice(0, 300) : 'unknown error' }, 502, origin);
 }
@@ -40,6 +43,22 @@ function createClient(env: Env): KISHttpClient { return new KISHttpClient({ appK
 function parseOrderType(value: string | null): 'market' | 'limit' | null { if (!value || value === 'market') return 'market'; if (value === 'limit') return 'limit'; return null; }
 function getKstDate(): string { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()); const values = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value])); return `${values.year}${values.month}${values.day}`; }
 function parseDateParam(value: string | null, fallback: string): string { return value?.trim() || fallback; }
+
+async function loadReconciliation(env: Env): Promise<ReturnType<typeof reconcile>> {
+  const id = env.INTERNAL_STATE_STORE.idFromName('primary');
+  const store = env.INTERNAL_STATE_STORE.get(id);
+  const [account, orders] = await Promise.all([
+    new KISAccountAdapter(createClient(env), getEnvironment(env), env.ACCOUNT_CANO, env.ACCOUNT_PRODUCT_CODE).getSnapshot(),
+    new KISOrderAdapter(createClient(env), getEnvironment(env), env.ACCOUNT_CANO, env.ACCOUNT_PRODUCT_CODE).getOrderHistory(getKstDate(), getKstDate()),
+  ]);
+  const internal = await store.fetch('https://internal-state/');
+  if (!internal.ok) throw new Error('INTERNAL_STATE_UNAVAILABLE');
+  const internalState = await internal.json() as { positions: { symbol: string; quantity: number }[]; orders: { brokerOrderId: string; status: string; symbol: string; side: 'buy' | 'sell' | 'unknown'; quantity: number; executedQuantity: number }[] };
+  return reconcile(
+    { positions: account.positions.map((p) => ({ symbol: p.symbol, quantity: p.quantity })), orders: orders.orders.map((o) => ({ brokerOrderId: o.brokerOrderId, status: o.status, symbol: o.symbol, side: o.side, quantity: o.quantity, executedQuantity: o.executedQuantity })) },
+    internalState,
+  );
+}
 
 export default { async fetch(request: Request, env: Env): Promise<Response> {
   const origin = env.ALLOWED_ORIGIN || '*'; if (request.method === 'OPTIONS') return json({}, 204, origin);
@@ -51,7 +70,16 @@ export default { async fetch(request: Request, env: Env): Promise<Response> {
     if (url.pathname === '/dry-run/orders' && request.method === 'POST') {
       const body = await request.json().catch(() => null);
       if (!body || typeof body !== 'object') return json({ error: 'INVALID_DRY_RUN_REQUEST' }, 400, origin);
-      return store.fetch(new Request('https://dry-run-state/', { method: 'POST', body: JSON.stringify({ ...(body as object), action: 'order' }), headers: { 'content-type': 'application/json' } }));
+      const candidate = body as { request?: CreateOrderRequest; referencePrice?: number; fillQuantity?: number; config?: unknown };
+      try { assertOrderRequest(candidate.request as CreateOrderRequest); } catch { return json({ error: 'INVALID_ORDER' }, 400, origin); }
+      if (!Number.isFinite(candidate.referencePrice)) return json({ error: 'INVALID_REFERENCE_PRICE' }, 400, origin);
+      if (!env.ACCOUNT_CANO || !env.ACCOUNT_PRODUCT_CODE) return json({ error: 'ACCOUNT_NOT_CONFIGURED' }, 503, origin);
+      try {
+        const reconciliation = await loadReconciliation(env);
+        const gate = checkNewOrderGate(candidate.request as CreateOrderRequest, reconciliation);
+        if (!gate.allowed) return json({ error: gate.reason, reconciliation }, 409, origin);
+        return store.fetch(new Request('https://dry-run-state/', { method: 'POST', body: JSON.stringify({ ...candidate, action: 'order' }), headers: { 'content-type': 'application/json' } }));
+      } catch (error) { return errorResponse(error, origin, 'RECONCILIATION'); }
     }
     if (url.pathname === '/dry-run/reset' && request.method === 'POST') {
       const body = await request.json().catch(() => ({}));
@@ -66,13 +94,7 @@ export default { async fetch(request: Request, env: Env): Promise<Response> {
   if (url.pathname === '/orders') { if (!accountConfigured) return json({ error: 'ACCOUNT_NOT_CONFIGURED' }, 503, origin); const today = getKstDate(); const startDate = parseDateParam(url.searchParams.get('startDate'), today); const endDate = parseDateParam(url.searchParams.get('endDate'), today); if (!/^\d{8}$/.test(startDate) || !/^\d{8}$/.test(endDate) || startDate > endDate) return json({ error: 'INVALID_ORDER_HISTORY_PARAMS' }, 400, origin); try { const adapter = new KISOrderAdapter(createClient(env), getEnvironment(env), env.ACCOUNT_CANO, env.ACCOUNT_PRODUCT_CODE); return json(await adapter.getOrderHistory(startDate, endDate), 200, origin); } catch (error) { return errorResponse(error, origin, 'ORDERS'); } }
   if (url.pathname === '/reconciliation') {
     if (!accountConfigured) return json({ error: 'ACCOUNT_NOT_CONFIGURED' }, 503, origin);
-    try {
-      const id = env.INTERNAL_STATE_STORE.idFromName('primary'); const store = env.INTERNAL_STATE_STORE.get(id);
-      const [account, orders] = await Promise.all([new KISAccountAdapter(createClient(env), getEnvironment(env), env.ACCOUNT_CANO, env.ACCOUNT_PRODUCT_CODE).getSnapshot(), new KISOrderAdapter(createClient(env), getEnvironment(env), env.ACCOUNT_CANO, env.ACCOUNT_PRODUCT_CODE).getOrderHistory(getKstDate(), getKstDate())]);
-      const internal = await store.fetch('https://internal-state/'); if (!internal.ok) throw new Error('INTERNAL_STATE_UNAVAILABLE'); const internalState = await internal.json();
-      const result = reconcile({ positions: account.positions.map((p) => ({ symbol: p.symbol, quantity: p.quantity })), orders: orders.orders.map((o) => ({ brokerOrderId: o.brokerOrderId, status: o.status, symbol: o.symbol, side: o.side, quantity: o.quantity, executedQuantity: o.executedQuantity })) }, internalState as { positions: { symbol: string; quantity: number }[]; orders: { brokerOrderId: string; status: string; symbol: string; side: 'buy' | 'sell' | 'unknown'; quantity: number; executedQuantity: number }[] });
-      return json({ asOf: new Date().toISOString(), environment: getEnvironment(env), internalStateUpdatedAt: (internalState as { updatedAt?: string }).updatedAt, ...result }, 200, origin);
-    } catch (error) { return errorResponse(error, origin, 'RECONCILIATION'); }
+    try { const result = await loadReconciliation(env); return json({ asOf: new Date().toISOString(), environment: getEnvironment(env), ...result }, 200, origin); } catch (error) { return errorResponse(error, origin, 'RECONCILIATION'); }
   }
   if (url.pathname !== '/quote' && url.pathname !== '/quotes') return json({ error: 'NOT_FOUND' }, 404, origin);
   const symbols = url.pathname === '/quote' ? parseSymbols(url.searchParams.get('symbol')) : parseSymbols(url.searchParams.get('symbols')); if (!validateSymbols(symbols)) return json({ error: 'INVALID_SYMBOLS', maxSymbols: QUOTE_MAX_SYMBOLS }, 400, origin);
