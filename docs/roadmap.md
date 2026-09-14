@@ -9,11 +9,11 @@
 - [x] 국내 위탁계좌 상품코드 `01` 적용
 - [x] LIVE `/account`, `/account/assets`, `/buyable` 조회
 - [x] 읽기 전용 `/orders` 조회
-- [x] reconciliation 및 신규주문 Gate
+- [x] LIVE/PAPER 주문용 reconciliation 및 신규주문 Gate
 - [x] `Order` 도메인 상태 머신
 - [x] Durable Object 내부 상태 저장소
 - [x] DRY_RUN 가상 현금/포지션/주문 시뮬레이터
-- [x] DRY_RUN reconciliation Gate 강제 연결
+- [x] DRY_RUN 주문 경로를 KIS reconciliation/시세 조회와 분리
 - [x] GitHub Pages용 시세/계좌/DRY_RUN 주문 통합 UI
 - [x] 종목별 최대 수량/주문금액 Risk Manager
 - [x] 전체 포지션 한도 Risk Manager
@@ -25,7 +25,7 @@
 - [x] PAPER 주문 Adapter 기본 전송 경로
 - [x] PAPER 주문도 reconciliation Gate + Risk Manager 통과
 - [x] PAPER 주문 clientOrderId 멱등성 및 UNKNOWN 상태 처리
-- [ ] 모의투자 주문
+- [ ] 모의투자 주문 안정성 검증
 - [ ] 전략/백테스트
 - [ ] 실계좌 주문
 
@@ -56,7 +56,7 @@
 - [x] KIS ↔ 내부 reconciliation
 - [x] Durable Object 내부 상태 저장
 - [x] 신규주문 Gate
-- [x] DRY_RUN 주문 경로에 reconciliation Gate 연결
+- [x] DRY_RUN을 KIS reconciliation과 분리
 
 ## Phase 4 — 주문 도메인
 - [x] `Order` 도메인 모델
@@ -76,8 +76,9 @@
 - [x] 부분체결 시뮬레이션
 - [x] 주문 이력 및 재시작 복구
 - [x] 실제 주문 Adapter와 동일한 내부 계약
-- [x] reconciliation Gate 강제 연결
 - [x] GitHub Pages DRY_RUN 주문 UI
+- [x] DRY_RUN 주문에서 KIS 계좌/주문내역/실시간 시세 조회 제거
+- [x] DRY_RUN 장 운영시간 독립 처리
 
 ## Phase 6 — 위험관리 / Kill Switch
 - [x] 종목별 최대 수량/주문금액
@@ -146,6 +147,16 @@
 
 ## 현재 다음 작업
 
-**Phase 7 — PAPER 주문 안정성 검증**.
+### 1순위 — DRY_RUN 장외시간 회귀 검증
 
-PAPER 신규 주문은 한국시간(KST) 기준 평일 09:00~15:30 정규장에만 전송되도록 Worker 단계에서 차단한다. 주말과 장외 시간에는 KIS 주문 API까지 요청하지 않고 `MARKET_SESSION_CLOSED`를 반환한다. 장 운영시간 판정은 현재 정규장/주말만 처리하며 공휴일은 별도 KRX/KIS 휴장일 데이터 연동 전까지 보수적으로 평일로 간주하지 않는다. `/paper/reconcile`는 장외에서도 상태 복구를 위해 계속 호출할 수 있다. 현재 Worker의 `KIS_ENVIRONMENT`는 `LIVE`이므로 `/paper/orders`와 `/paper/reconcile`는 실제 운영 환경에서 PAPER 작업을 수행하지 않는다. LIVE 주문 API는 계속 추가하지 않는다.
+최근 `/dry-run/orders`를 KIS 외부 조회와 완전히 분리했다. 다음 단계는 실제 Worker 엔드포인트에서 장외시간 주문을 호출해 성공 여부를 확인하고, Risk Manager 및 Kill Switch 거부도 함께 회귀 검증하는 것이다.
+
+### 2순위 — Phase 7 PAPER 주문 안정성 검증
+
+PAPER 신규 주문은 한국시간(KST) 기준 평일 09:00~15:30 정규장에만 전송되도록 Worker 단계에서 차단한다. 주말과 장외 시간에는 KIS 주문 API까지 요청하지 않고 `MARKET_SESSION_CLOSED`를 반환한다. `/paper/reconcile`는 장외에서도 상태 복구를 위해 계속 호출할 수 있다.
+
+현재 Worker의 `KIS_ENVIRONMENT`는 `LIVE`이므로 `/paper/orders`와 `/paper/reconcile`는 실제 운영 환경에서 PAPER 작업을 수행하지 않는다. LIVE 주문 API는 계속 추가하지 않는다.
+
+### 3순위 — 일정 기간 안정성 검증
+
+PAPER 주문의 성공/거부/UNKNOWN/부분체결/취소/재시작 복구를 일정 기간 반복 검증한 뒤 전략 및 백테스트 단계로 이동한다.
