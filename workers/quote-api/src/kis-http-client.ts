@@ -38,7 +38,7 @@ type KISTokenResponse = {
 };
 
 type CachedToken = { value: string; expiresAt: number; baseUrl: string };
-type BrokerTokenResponse = { accessToken?: string; expiresAt?: number; error?: string };
+type BrokerTokenResponse = { accessToken?: string; expiresAt?: number; error?: string; status?: number; code?: string };
 type KISRejectedResponse = { msg_cd?: string; msg1?: string; rt_cd?: string };
 
 export interface KISJsonResponse<T> {
@@ -154,10 +154,15 @@ export class KISHttpClient {
       } catch {
         throw new KISHttpError('KIS_UPSTREAM_ERROR', 'KIS token broker request failed');
       }
-      if (!response.ok) {
-        throw new KISHttpError('KIS_AUTH_FAILED', 'KIS token broker rejected the request', response.status);
-      }
       const body = (await response.json()) as BrokerTokenResponse;
+      if (!response.ok) {
+        throw new KISHttpError(
+          body.code ? 'KIS_AUTH_FAILED' : 'KIS_UPSTREAM_ERROR',
+          'KIS token broker rejected the request',
+          body.status ?? response.status,
+          body.code,
+        );
+      }
       if (body.accessToken && body.expiresAt && body.expiresAt > Date.now()) {
         cachedToken = { value: body.accessToken, expiresAt: body.expiresAt, baseUrl: this.baseUrl };
         return body.accessToken;
