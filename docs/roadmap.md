@@ -32,6 +32,7 @@
 - [x] Durable Object 기반 내부 주문/포지션 상태 저장소
 - [x] `/reconciliation` 실제 KIS 조회 ↔ 내부 상태 비교 연결
 - [x] KIS/내부 주문 누락도 불일치로 판정
+- [x] 신규주문 reconciliation Gate 공통 모듈 및 테스트
 - [ ] 불일치 경고 및 신규주문 차단을 실제 주문 경로에 연결
 - [ ] DRY_RUN 주문 시뮬레이터
 - [ ] 위험관리 및 Kill Switch
@@ -82,6 +83,7 @@
 - [x] KIS 포지션/주문과 내부 상태를 비교하는 순수 reconciliation 모델
 - [x] Durable Object 내부 상태 저장소 연결
 - [x] `/reconciliation`에서 KIS 상태와 내부 상태 비교
+- [x] 신규주문 Gate 공통 모듈
 - [ ] 불일치 시 신규 주문 차단을 실제 주문 경로에 연결
 
 ### Phase 4 — 주문 도메인
@@ -171,7 +173,7 @@
 
 ## 4. 현재 다음 작업
 
-**Phase 3 후반 → Phase 4 진행 중**.
+**Phase 4 → Phase 5 진입 준비**.
 
 현재 실제 LIVE 계좌에 대해 다음 읽기 전용 연결이 검증되었다.
 
@@ -182,16 +184,17 @@
 5. reconciliation — KIS 상태와 내부 상태의 차이를 계산하고 신규 주문 가능 여부를 판정
 6. Order domain — KIS와 독립적인 주문 상태/전이 계약
 7. Internal State Store — Durable Object로 내부 상태를 영속 저장
+8. Order Gate — 신규 주문 전에 reconciliation 및 주문 형식을 검증하는 공통 차단 계층
 
 현재 실제 계좌는 국내 현금과 국내주식 보유가 0이고 해외 달러 자산만 존재하므로, `/buyable`의 국내 주문가능 현금 0원은 정상적인 상태다. 해외 자산 총액을 국내 주문가능 현금으로 간주하지 않는다.
 
 다음 구현 단위:
 
-1. `MISMATCHED` 상태를 신규 주문 경로의 실제 Gate로 연결
-2. DRY_RUN 주문 시뮬레이터 구현
-3. 위험관리 및 Kill Switch
-4. 모의투자 주문 Adapter
-5. 실제 주문 API는 모의투자 + DRY_RUN + Risk Gate 이후에만 추가
+1. DRY_RUN 주문 경로를 만들고 Order Gate를 실제 신규주문 흐름에 연결
+2. 가상 현금/보유 포지션과 시장가·지정가 체결 시뮬레이션
+3. 수수료/세금/슬리피지 및 부분체결 모델
+4. DRY_RUN 상태 영속화 및 재시작 복구
+5. 이후 Risk Manager + Kill Switch를 DRY_RUN 경로에 강제 연결
 
 ## 5. 완료 판정
 
