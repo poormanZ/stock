@@ -32,6 +32,11 @@ type KISTokenResponse = {
   access_token_token_expired?: string;
 };
 
+export interface KISJsonResponse<T> {
+  data: T;
+  headers: Headers;
+}
+
 const LIVE_BASE_URL = 'https://openapi.koreainvestment.com:9443';
 const PAPER_BASE_URL = 'https://openapivts.koreainvestment.com:29443';
 const TOKEN_PATH = '/oauth2/tokenP';
@@ -148,7 +153,7 @@ export class KISHttpClient {
     return body.access_token;
   }
 
-  async getJson<T>(path: string, headers: Record<string, string>): Promise<T> {
+  async getJsonResponse<T>(path: string, headers: Record<string, string>): Promise<KISJsonResponse<T>> {
     const token = await this.getAccessToken();
     const url = `${this.baseUrl}${path}`;
     let lastError: KISHttpError | null = null;
@@ -165,7 +170,7 @@ export class KISHttpClient {
 
       if (response.ok) {
         try {
-          return (await response.json()) as T;
+          return { data: (await response.json()) as T, headers: response.headers };
         } catch {
           throw new KISHttpError('KIS_INVALID_RESPONSE', 'KIS response was not valid JSON');
         }
@@ -182,6 +187,10 @@ export class KISHttpClient {
     }
 
     throw lastError ?? new KISHttpError('KIS_UPSTREAM_ERROR', 'KIS API request failed');
+  }
+
+  async getJson<T>(path: string, headers: Record<string, string>): Promise<T> {
+    return (await this.getJsonResponse<T>(path, headers)).data;
   }
 
   invalidateToken(): void {
