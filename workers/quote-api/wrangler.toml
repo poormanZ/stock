@@ -20,6 +20,10 @@ class_name = "KISTokenBroker"
 name = "INTERNAL_STATE_STORE"
 class_name = "InternalStateStoreDO"
 
+[[durable_objects.bindings]]
+name = "DRY_RUN_STATE_STORE"
+class_name = "DryRunStateStoreDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["KISTokenBroker"]
@@ -27,3 +31,7 @@ new_sqlite_classes = ["KISTokenBroker"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["InternalStateStoreDO"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["DryRunStateStoreDO"]
