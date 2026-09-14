@@ -58,7 +58,7 @@ function normalizePosition(item: RawBalanceItem): AccountPosition | null {
 }
 function validateAccountParts(cano: string, accountProductCode: string): void {
   if (!/^\d{8}$/.test(cano.trim())) throw new Error('KIS account CANO must use 8 digits');
-  if (!/^\d{2}$/.test(accountProductCode.trim())) throw new Error('KIS account product code must use 2 digits');
+  if (accountProductCode.trim() !== '01') throw new Error('KIS consignment account product code must be 01');
 }
 function kisRequestError(prefix: string, response: { msg_cd?: string; msg1?: string }): Error {
   const code = response.msg_cd ?? 'UNKNOWN';

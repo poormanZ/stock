@@ -16,8 +16,8 @@ describe('KISAccountAdapter', () => {
   it('calls the official account asset API separately', async () => {
     let requestedPath = ''; let requestedHeaders: Record<string, string> = {};
     const client = { getJsonResponse: async <T>(path: string, headers: Record<string, string>) => { requestedPath = path; requestedHeaders = headers; return { data: { rt_cd: '0', output1: [{ asset_type: 'CASH' }], output2: { sample_amount: '1000' } }, headers: new Headers() } as unknown as KISJsonResponse<T>; } } as never;
-    const adapter = new KISAccountAdapter(client, 'LIVE', '12345678', '21'); const result = await adapter.getAccountAssets();
-    expect(requestedPath).toContain('/uapi/domestic-stock/v1/trading/inquire-account-balance?'); expect(requestedPath).toContain('CANO=12345678'); expect(requestedPath).toContain('ACNT_PRDT_CD=21'); expect(requestedHeaders.tr_id).toBe('CTRP6548R'); expect(result.output1).toHaveLength(1); expect(result.output2.sample_amount).toBe('1000');
+    const adapter = new KISAccountAdapter(client, 'LIVE', '12345678', '01'); const result = await adapter.getAccountAssets();
+    expect(requestedPath).toContain('/uapi/domestic-stock/v1/trading/inquire-account-balance?'); expect(requestedPath).toContain('CANO=12345678'); expect(requestedPath).toContain('ACNT_PRDT_CD=01'); expect(requestedHeaders.tr_id).toBe('CTRP6548R'); expect(result.output1).toHaveLength(1); expect(result.output2.sample_amount).toBe('1000');
   });
 
   it('maps paper buyable amount response', async () => {
@@ -34,6 +34,8 @@ describe('KISAccountAdapter', () => {
 
   it('rejects malformed CANO and product code before calling KIS', async () => {
     const client = { getJsonResponse: async () => { throw new Error('must not call'); } } as never;
-    await expect(new KISAccountAdapter(client, 'PAPER', '1234', '01').getSnapshot()).rejects.toThrow('CANO'); await expect(new KISAccountAdapter(client, 'PAPER', '12345678', '1').getSnapshot()).rejects.toThrow('product code');
+    await expect(new KISAccountAdapter(client, 'PAPER', '1234', '01').getSnapshot()).rejects.toThrow('CANO');
+    await expect(new KISAccountAdapter(client, 'PAPER', '12345678', '1').getSnapshot()).rejects.toThrow('product code');
+    await expect(new KISAccountAdapter(client, 'PAPER', '12345678', '21').getSnapshot()).rejects.toThrow('must be 01');
   });
 });

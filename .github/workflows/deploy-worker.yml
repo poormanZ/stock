@@ -63,4 +63,5 @@ jobs:
           APP_KEY: ${{ secrets.APP_KEY }}
           APP_SECRET: ${{ secrets.APP_SECRET }}
           ACCOUNT_CANO: ${{ secrets.ACCOUNT_CANO }}
-          ACCOUNT_PRODUCT_CODE: ${{ secrets.ACCOUNT_PRODUCT_CODE }}
+          # 국내주식 위탁계좌의 계좌상품코드는 01로 고정한다.
+          ACCOUNT_PRODUCT_CODE: '01'

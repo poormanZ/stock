@@ -7,7 +7,7 @@ compatibility_date = "2026-09-04"
 KIS_ENVIRONMENT = "LIVE"
 ALLOWED_ORIGIN = "https://poormanz.github.io"
 
-# KIS 계좌는 앞 8자리(CANO)와 뒤 2자리(계좌상품코드)로 분리해 관리한다.
+# 국내주식 위탁계좌 기준: 앞 8자리(CANO) + 계좌상품코드 01.
 [secrets]
 required = ["APP_KEY", "APP_SECRET", "ACCOUNT_CANO", "ACCOUNT_PRODUCT_CODE"]
 
