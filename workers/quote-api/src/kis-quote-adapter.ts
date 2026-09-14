@@ -41,12 +41,14 @@ export class KISQuoteAdapter {
       throw new KISHttpError('KIS_INVALID_RESPONSE', 'Invalid domestic stock symbol');
     }
 
-    const body = await this.client.getJson<KISQuoteResponse>(QUOTE_PATH, {
-      appkey: this.clientAppKey,
-      appsecret: this.clientAppSecret,
-      tr_id: QUOTE_TR_ID,
-      custtype: 'P',
-    });
+    const url = new URL(QUOTE_PATH, 'https://kis.internal');
+    url.searchParams.set('FID_COND_MRKT_DIV_CODE', 'J');
+    url.searchParams.set('FID_INPUT_ISCD', symbol);
+
+    const body = await this.client.getJson<KISQuoteResponse>(
+      `${url.pathname}${url.search}`,
+      { tr_id: QUOTE_TR_ID, custtype: 'P' },
+    );
 
     if (body.rt_cd && body.rt_cd !== '0') {
       throw new KISHttpError('KIS_UPSTREAM_ERROR', body.msg1 || 'KIS quote request was rejected');
@@ -68,17 +70,5 @@ export class KISQuoteAdapter {
       source: 'KIS OPEN API',
       delayed: false,
     };
-  }
-
-  private get clientAppKey(): string {
-    return this.clientCredentials.appKey;
-  }
-
-  private get clientAppSecret(): string {
-    return this.clientCredentials.appSecret;
-  }
-
-  private get clientCredentials(): { appKey: string; appSecret: string } {
-    return this.client as unknown as { appKey: string; appSecret: string };
   }
 }
