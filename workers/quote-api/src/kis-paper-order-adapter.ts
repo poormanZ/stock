@@ -110,7 +110,7 @@ export class KISPaperOrderAdapter {
     const response = await this.client.postJsonResponse<RawOrderResponse>(CANCEL_PATH, {
       CANO: this.cano.trim(),
       ACNT_PRDT_CD: this.accountProductCode.trim(),
-      KRX_FWDG_ORD_ORGNO: order.brokerOrderId,
+      KRX_FWDG_ORD_ORGNO: order.brokerOrderOrgNo,
       ORGN_ODNO: order.brokerOrderId,
       ORD_DVSN: order.orderType === 'market' ? '01' : '00',
       RVSE_CNCL_DVSN_CD: '02',
