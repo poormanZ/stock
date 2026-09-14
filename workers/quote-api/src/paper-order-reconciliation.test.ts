@@ -12,8 +12,8 @@ const internal: Order = {
   orderType: 'limit',
   quantity: 10,
   limitPrice: 70000,
-  executedQuantity: 2,
-  averageExecutedPrice: 70100,
+  executedQuantity: 0,
+  averageExecutedPrice: 0,
   status: 'ACCEPTED',
   createdAt: '2026-09-14T09:00:00.000Z',
   updatedAt: '2026-09-14T09:01:00.000Z',
@@ -36,7 +36,19 @@ const broker: OrderRecord = {
 };
 
 describe('resyncPaperOrders', () => {
-  it('updates partial/filled state from KIS order history', () => {
+  it('resyncs a partial fill with executed quantity and average price', () => {
+    const result = resyncPaperOrders([internal], [{ ...broker, executedQuantity: 4, averageExecutedPrice: 70100, status: 'PARTIALLY_FILLED' }]);
+    expect(result.updated).toBe(1);
+    expect(result.orders[0]).toMatchObject({
+      brokerOrderId: '12345',
+      status: 'PARTIALLY_FILLED',
+      executedQuantity: 4,
+      averageExecutedPrice: 70100,
+    });
+    expect(result.unresolved).toEqual([]);
+  });
+
+  it('resyncs a filled order from KIS history', () => {
     const result = resyncPaperOrders([internal], [broker]);
     expect(result.updated).toBe(1);
     expect(result.orders[0]).toMatchObject({
@@ -46,6 +58,17 @@ describe('resyncPaperOrders', () => {
       averageExecutedPrice: 70150,
     });
     expect(result.unresolved).toEqual([]);
+  });
+
+  it('resyncs a canceled order without changing executed quantity', () => {
+    const result = resyncPaperOrders([internal], [{ ...broker, status: 'CANCELED', executedQuantity: 0, averageExecutedPrice: 0 }]);
+    expect(result.updated).toBe(1);
+    expect(result.orders[0]).toMatchObject({
+      brokerOrderId: '12345',
+      status: 'CANCELED',
+      executedQuantity: 0,
+      averageExecutedPrice: 0,
+    });
   });
 
   it('does not mutate orders that are absent from KIS history and reports KIS-only orders', () => {
