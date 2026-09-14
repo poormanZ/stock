@@ -60,18 +60,36 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 async function refreshAll(): Promise<void> {
   if (!live || busy) return;
   busy = true; message = '데이터 동기화 중…'; render();
+  const failures: string[] = [];
   try {
-    const [q, a, d, o, r] = await Promise.all([
+    const results = await Promise.allSettled([
       quoteProvider.getQuotes(stocks.map((s) => s.symbol)),
-      get<Account>('/account'), get<DryRun>('/dry-run'), get<OrdersResponse>('/orders'), get<Reconciliation>('/reconciliation'),
+      get<Account>('/account'),
+      get<DryRun>('/dry-run'),
+      get<OrdersResponse>('/orders'),
+      get<Reconciliation>('/reconciliation'),
     ]);
-    quotes = q; account = a; dryRun = d; orderHistory = o; reconciliation = r;
+
+    const [q, a, d, o, r] = results;
+    if (q.status === 'fulfilled') quotes = q.value;
+    else failures.push(`시세: ${apiError(q.reason)}`);
+    if (a.status === 'fulfilled') account = a.value;
+    else failures.push(`계좌: ${apiError(a.reason)}`);
+    if (d.status === 'fulfilled') dryRun = d.value;
+    else failures.push(`DRY_RUN: ${apiError(d.reason)}`);
+    if (o.status === 'fulfilled') orderHistory = o.value;
+    else failures.push(`주문이력: ${apiError(o.reason)}`);
+    if (r.status === 'fulfilled') reconciliation = r.value;
+    else failures.push(`RECONCILIATION: ${apiError(r.reason)}`);
+
     if (selectedSymbol && !quotes.some((qv) => qv.symbol === selectedSymbol)) selectedSymbol = quotes[0]?.symbol ?? selectedSymbol;
     const selected = quotes.find((qv) => qv.symbol === selectedSymbol);
     if (selected && !limitPrice) limitPrice = selected.price;
-    message = 'LIVE 데이터 동기화 완료';
-  } catch (error) { message = apiError(error); }
-  finally { busy = false; render(); }
+    message = failures.length ? `동기화 부분 실패 · ${failures.join(' / ')}` : 'LIVE 데이터 동기화 완료';
+  } finally {
+    busy = false;
+    render();
+  }
 }
 
 async function refreshDryRun(): Promise<void> {
