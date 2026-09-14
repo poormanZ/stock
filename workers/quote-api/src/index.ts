@@ -22,7 +22,14 @@ interface Env {
 function json(data: unknown, status = 200, origin = '*'): Response { return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': origin, 'access-control-allow-methods': 'GET,OPTIONS', 'access-control-allow-headers': 'content-type' } }); }
 function getEnvironment(env: Env): KISEnvironment { return env.KIS_ENVIRONMENT === 'LIVE' ? 'LIVE' : 'PAPER'; }
 function errorResponse(error: unknown, origin: string, scope: 'QUOTE' | 'ACCOUNT' | 'ACCOUNT_ASSET' | 'BUYABLE'): Response {
-  if (error instanceof KISHttpError) { const status = error.code === 'KIS_TIMEOUT' ? 504 : error.code === 'KIS_RATE_LIMITED' ? 429 : 502; return json({ error: error.code }, status, origin); }
+  if (error instanceof KISHttpError) {
+    const status = error.code === 'KIS_TIMEOUT' ? 504 : error.code === 'KIS_RATE_LIMITED' ? 429 : 502;
+    const body: Record<string, unknown> = { error: error.code };
+    if (error.status !== undefined) body.status = error.status;
+    if (error.upstreamCode) body.code = error.upstreamCode;
+    console.error(`${scope} KIS HTTP request failed`, { code: error.code, status: error.status, upstreamCode: error.upstreamCode, message: error.message });
+    return json(body, status, origin);
+  }
   if ((scope === 'ACCOUNT' || scope === 'ACCOUNT_ASSET') && error instanceof Error) {
     if (error.message === 'KIS account CANO must use 8 digits' || error.message === 'KIS account product code must use 2 digits') return json({ error: 'ACCOUNT_CONFIG_INVALID' }, 503, origin);
     const match = error.message.match(/^KIS (balance|account asset) request failed: ([A-Za-z0-9_-]+)$/);
