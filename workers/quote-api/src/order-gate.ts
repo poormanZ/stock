@@ -1,4 +1,4 @@
-import type { CreateOrderRequest } from './order-domain';
+import { assertOrderRequest, type CreateOrderRequest } from './order-domain';
 import type { ReconciliationResult } from './reconciliation';
 
 export interface OrderGateResult {
@@ -8,6 +8,11 @@ export interface OrderGateResult {
 }
 
 export function checkNewOrderGate(request: CreateOrderRequest, reconciliation: ReconciliationResult): OrderGateResult {
+  try {
+    assertOrderRequest(request);
+  } catch {
+    return { allowed: false, reason: 'INVALID_ORDER', reconciliation };
+  }
   if (!reconciliation.canPlaceNewOrders) {
     return { allowed: false, reason: 'RECONCILIATION_MISMATCH', reconciliation };
   }
