@@ -138,16 +138,21 @@ export class KISHttpClient {
 
     if (this.options.tokenBroker) {
       const id = this.options.tokenBroker.idFromName(`KIS:${this.baseUrl}`);
-      const response = await id
-        .fetch('https://kis-token-broker/token')
-        .catch(() => null);
-      if (response?.ok) {
-        const body = (await response.json()) as BrokerTokenResponse;
-        if (body.accessToken && body.expiresAt && body.expiresAt > Date.now()) {
-          cachedToken = { value: body.accessToken, expiresAt: body.expiresAt, baseUrl: this.baseUrl };
-          return body.accessToken;
-        }
+      let response: Response;
+      try {
+        response = await id.fetch('https://kis-token-broker/token');
+      } catch {
+        throw new KISHttpError('KIS_UPSTREAM_ERROR', 'KIS token broker request failed');
       }
+      if (!response.ok) {
+        throw new KISHttpError('KIS_AUTH_FAILED', 'KIS token broker rejected the request', response.status);
+      }
+      const body = (await response.json()) as BrokerTokenResponse;
+      if (body.accessToken && body.expiresAt && body.expiresAt > Date.now()) {
+        cachedToken = { value: body.accessToken, expiresAt: body.expiresAt, baseUrl: this.baseUrl };
+        return body.accessToken;
+      }
+      throw new KISHttpError('KIS_AUTH_FAILED', 'KIS token broker did not return a valid token');
     }
 
     return this.issueAccessToken();
