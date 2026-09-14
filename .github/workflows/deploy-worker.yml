@@ -57,10 +57,8 @@ jobs:
           secrets: |
             APP_KEY
             APP_SECRET
-            ACCOUNT_CANO
-            ACCOUNT_PRODUCT_CODE
+            ACCOUNT_NUM
         env:
           APP_KEY: ${{ secrets.APP_KEY }}
           APP_SECRET: ${{ secrets.APP_SECRET }}
-          ACCOUNT_CANO: ${{ secrets.ACCOUNT_CANO }}
-          ACCOUNT_PRODUCT_CODE: ${{ secrets.ACCOUNT_PRODUCT_CODE }}
+          ACCOUNT_NUM: ${{ secrets.ACCOUNT_NUM }}
