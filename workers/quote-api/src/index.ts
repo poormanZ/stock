@@ -1,7 +1,11 @@
 import { KISAccountAdapter } from './kis-account-adapter';
 import { KISHttpClient, KISHttpError } from './kis-http-client';
 import { KISQuoteAdapter } from './kis-quote-adapter';
+import { KISTokenBroker } from './kis-token-broker';
 import { parseSymbols, QUOTE_MAX_SYMBOLS, validateSymbols } from './quote-contract';
+
+// Durable Object class must be exported from the Worker entrypoint so Wrangler can bind it.
+export { KISTokenBroker } from './kis-token-broker';
 
 type KISEnvironment = 'PAPER' | 'LIVE';
 interface Env {
