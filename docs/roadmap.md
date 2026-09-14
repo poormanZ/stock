@@ -94,7 +94,7 @@
 - [x] 모의투자 주문 Adapter
 - [x] 주문/체결 조회
 - [x] LIVE/PAPER 환경 분리 검증
-- [ ] 장 운영시간 처리
+- [x] 장 운영시간 처리
 - [x] 실패/UNKNOWN 복구 1차 처리
 - [x] 부분체결/취소 복구
 - [ ] 일정 기간 안정성 검증
@@ -146,6 +146,6 @@
 
 ## 현재 다음 작업
 
-**Phase 7 — 장 운영시간 처리 및 PAPER 주문 안정성 검증**.
+**Phase 7 — PAPER 주문 안정성 검증**.
 
-현재 `/paper/reconcile`는 PAPER 환경에서만 동작하며 KIS 당일 주문/체결 내역을 내부 `Order` 상태에 재동기화한다. 부분체결/체결완료/취소 상태를 복구하고, KIS에만 존재하는 주문은 자동 생성하지 않고 `unresolved`로 반환한다. 현재 Worker의 `KIS_ENVIRONMENT`는 `LIVE`이므로 `/paper/orders`와 `/paper/reconcile`는 실제 운영 환경에서 PAPER 작업을 수행하지 않는다. LIVE 주문 API는 계속 추가하지 않는다.
+PAPER 신규 주문은 한국시간(KST) 기준 평일 09:00~15:30 정규장에만 전송되도록 Worker 단계에서 차단한다. 주말과 장외 시간에는 KIS 주문 API까지 요청하지 않고 `MARKET_SESSION_CLOSED`를 반환한다. 장 운영시간 판정은 현재 정규장/주말만 처리하며 공휴일은 별도 KRX/KIS 휴장일 데이터 연동 전까지 보수적으로 평일로 간주하지 않는다. `/paper/reconcile`는 장외에서도 상태 복구를 위해 계속 호출할 수 있다. 현재 Worker의 `KIS_ENVIRONMENT`는 `LIVE`이므로 `/paper/orders`와 `/paper/reconcile`는 실제 운영 환경에서 PAPER 작업을 수행하지 않는다. LIVE 주문 API는 계속 추가하지 않는다.
