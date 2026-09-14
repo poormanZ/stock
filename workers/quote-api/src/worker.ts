@@ -128,13 +128,14 @@ async function handlePaperCancel(env: WorkerEnv, request: Request, origin: strin
   const candidate = body as { id?: string; clientOrderId?: string };
   if (!candidate.id && !candidate.clientOrderId) return json({ error: 'ORDER_IDENTIFIER_REQUIRED' }, 400, origin);
 
+  let order: Order | undefined;
   try {
     const internalId = env.INTERNAL_STATE_STORE.idFromName('primary');
     const internalStore = env.INTERNAL_STATE_STORE.get(internalId);
     const internalResponse = await internalStore.fetch('https://internal-state/');
     if (!internalResponse.ok) throw new Error('INTERNAL_STATE_UNAVAILABLE');
     const internalState = (await internalResponse.json()) as { orderRecords?: Order[] };
-    const order = (internalState.orderRecords ?? []).find((item) => candidate.id === item.id || candidate.clientOrderId === item.clientOrderId);
+    order = (internalState.orderRecords ?? []).find((item) => candidate.id === item.id || candidate.clientOrderId === item.clientOrderId);
     if (!order) return json({ error: 'ORDER_NOT_FOUND' }, 404, origin);
     if (!['SUBMITTED', 'ACCEPTED', 'PARTIALLY_FILLED'].includes(order.status)) {
       return json({ error: 'ORDER_NOT_CANCELLABLE', status: order.status, order }, 409, origin);
@@ -161,6 +162,21 @@ async function handlePaperCancel(env: WorkerEnv, request: Request, origin: strin
 
     return json({ order: canceledOrder, messageCode: cancellation.messageCode, message: cancellation.message }, 200, origin);
   } catch (error) {
+    if (order && error instanceof KISHttpError) {
+      try {
+        const unknownOrder = transitionOrder(order, 'UNKNOWN');
+        const internalId = env.INTERNAL_STATE_STORE.idFromName('primary');
+        const internalStore = env.INTERNAL_STATE_STORE.get(internalId);
+        const persistResponse = await internalStore.fetch(new Request('https://internal-state/', {
+          method: 'POST',
+          body: JSON.stringify({ action: 'apply-order', order: unknownOrder }),
+          headers: { 'content-type': 'application/json' },
+        }));
+        if (!persistResponse.ok) throw new Error('INTERNAL_STATE_UNAVAILABLE');
+      } catch (persistError) {
+        return reconcileError(persistError, origin);
+      }
+    }
     if (error instanceof KISHttpError) return reconcileError(error, origin);
     if (error instanceof Error && error.message === 'INTERNAL_STATE_UNAVAILABLE') return reconcileError(error, origin);
     return json({ error: 'PAPER_ORDER_CANCEL_UNKNOWN', message: error instanceof Error ? error.message.slice(0, 300) : 'unknown error' }, 502, origin);
