@@ -1,6 +1,9 @@
+type KISEnvironment = 'PAPER' | 'LIVE';
+
 interface Env {
-  KIS_APP_KEY: string;
-  KIS_APP_SECRET: string;
+  APP_KEY: string;
+  APP_SECRET: string;
+  KIS_ENVIRONMENT?: KISEnvironment;
   KIS_BASE_URL?: string;
   ALLOWED_ORIGIN?: string;
 }
@@ -18,10 +21,16 @@ type KISQuoteResponse = {
   };
 };
 
-const DEFAULT_BASE_URL = 'https://openapi.koreainvestment.com:9443';
+type KISTokenResponse = {
+  access_token?: string;
+  access_token_token_expired?: string;
+};
+
+const LIVE_BASE_URL = 'https://openapi.koreainvestment.com:9443';
+const PAPER_BASE_URL = 'https://openapivts.koreainvestment.com:29443';
 const TOKEN_PATH = '/oauth2/tokenP';
 const QUOTE_PATH = '/uapi/domestic-stock/v1/quotations/inquire-price';
-const TOKEN_TTL_MS = 20 * 60 * 1000;
+const TOKEN_SAFETY_MARGIN_MS = 5 * 60 * 1000;
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
 let tokenPromise: Promise<string> | null = null;
@@ -39,22 +48,43 @@ function json(data: unknown, status = 200, origin = '*'): Response {
   });
 }
 
+function getEnvironment(env: Env): KISEnvironment {
+  return env.KIS_ENVIRONMENT === 'LIVE' ? 'LIVE' : 'PAPER';
+}
+
+function getBaseUrl(env: Env): string {
+  if (env.KIS_BASE_URL) return env.KIS_BASE_URL.replace(/\/$/, '');
+  return getEnvironment(env) === 'LIVE' ? LIVE_BASE_URL : PAPER_BASE_URL;
+}
+
 async function requestAccessToken(env: Env, baseUrl: string): Promise<string> {
   const response = await fetch(`${baseUrl}${TOKEN_PATH}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json; charset=utf-8' },
     body: JSON.stringify({
       grant_type: 'client_credentials',
-      appkey: env.KIS_APP_KEY,
-      appsecret: env.KIS_APP_SECRET,
+      appkey: env.APP_KEY,
+      appsecret: env.APP_SECRET,
     }),
   });
 
   if (!response.ok) throw new Error(`KIS token request failed: ${response.status}`);
-  const body = (await response.json()) as { access_token?: string };
+
+  const body = (await response.json()) as KISTokenResponse;
   if (!body.access_token) throw new Error('KIS access token was not returned');
 
-  cachedToken = { value: body.access_token, expiresAt: Date.now() + TOKEN_TTL_MS };
+  const expiresAt = body.access_token_token_expired
+    ? Date.parse(body.access_token_token_expired.replace(' ', 'T'))
+    : NaN;
+  const fallbackExpiresAt = Date.now() + 6 * 60 * 60 * 1000;
+
+  cachedToken = {
+    value: body.access_token,
+    expiresAt: Number.isFinite(expiresAt)
+      ? Math.max(Date.now() + TOKEN_SAFETY_MARGIN_MS, expiresAt - TOKEN_SAFETY_MARGIN_MS)
+      : fallbackExpiresAt,
+  };
+
   return body.access_token;
 }
 
@@ -76,7 +106,7 @@ function toNumber(value: string | undefined): number {
 async function getQuote(env: Env, symbol: string): Promise<unknown> {
   if (!/^\d{6}$/.test(symbol)) throw new Error('Invalid domestic stock symbol');
 
-  const baseUrl = env.KIS_BASE_URL || DEFAULT_BASE_URL;
+  const baseUrl = getBaseUrl(env);
   const token = await getAccessToken(env, baseUrl);
   const url = new URL(`${baseUrl}${QUOTE_PATH}`);
   url.searchParams.set('FID_COND_MRKT_DIV_CODE', 'J');
@@ -85,8 +115,8 @@ async function getQuote(env: Env, symbol: string): Promise<unknown> {
   const response = await fetch(url, {
     headers: {
       authorization: `Bearer ${token}`,
-      appkey: env.KIS_APP_KEY,
-      appsecret: env.KIS_APP_SECRET,
+      appkey: env.APP_KEY,
+      appsecret: env.APP_SECRET,
       tr_id: 'FHKST01010100',
       custtype: 'P',
     },
