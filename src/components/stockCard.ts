@@ -1,13 +1,24 @@
 import type { StockQuote } from '../types/stock';
 import { getQuoteDirection } from '../types/stock';
+import { formatAsOf, getQuoteFreshness } from '../services/quoteFreshness';
 
 const formatPrice = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 });
 const formatVolume = new Intl.NumberFormat('ko-KR', { notation: 'compact', maximumFractionDigits: 1 });
+
+const freshnessLabel: Record<ReturnType<typeof getQuoteFreshness>, string> = {
+  FRESH: 'FRESH',
+  STALE: 'STALE',
+  TIME_UNKNOWN: 'TIME UNKNOWN',
+  CLOSED: 'CLOSED',
+  INVALID_TIME: 'TIME INVALID',
+};
 
 export function renderStockCard(quote: StockQuote): string {
   const direction = getQuoteDirection(quote.change);
   const sign = quote.change > 0 ? '+' : '';
   const directionLabel = direction === 'up' ? '상승' : direction === 'down' ? '하락' : '보합';
+  const freshness = getQuoteFreshness(quote);
+  const freshnessText = freshnessLabel[freshness];
 
   return `
     <article class="stock-card stock-card--${direction}" aria-label="${quote.name} ${directionLabel}">
@@ -27,8 +38,9 @@ export function renderStockCard(quote: StockQuote): string {
       </div>
       <dl class="stock-card__meta">
         <div><dt>VOLUME</dt><dd>${formatVolume.format(quote.volume)}</dd></div>
-        <div><dt>AS OF</dt><dd>${quote.asOf}</dd></div>
+        <div><dt>AS OF</dt><dd>${formatAsOf(quote.asOf)}</dd></div>
       </dl>
+      <div class="freshness freshness--${freshness.toLowerCase()}" role="status">${freshnessText}</div>
       <footer>${quote.source}${quote.delayed ? ' · DELAYED' : ''}</footer>
     </article>
   `;

@@ -3,7 +3,7 @@ import { sampleStocks } from './data/sampleStocks';
 import { renderStockCard } from './components/stockCard';
 import { loadWatchlist, saveWatchlist } from './data/watchlist';
 import { SampleQuoteProvider } from './services/sampleQuoteProvider';
-import { HttpQuoteProvider } from './services/httpQuoteProvider';
+import { HttpQuoteProvider, QuoteApiError } from './services/httpQuoteProvider';
 import type { QuoteProvider } from './services/quoteProvider';
 import type { StockQuote } from './types/stock';
 
@@ -18,13 +18,25 @@ const quoteProvider: QuoteProvider = quoteApiBaseUrl
 const isLiveMode = Boolean(quoteApiBaseUrl);
 
 let stocks = loadWatchlist(catalog);
-let lastUpdated = new Date();
+let lastUpdated: Date | null = null;
 let statusMessage = isLiveMode ? 'LIVE API · READY' : 'SAMPLE DATA · READY';
 let feedbackMessage = '';
 let loading = false;
 
-function formatTime(date: Date): string {
-  return new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date);
+function formatTime(date: Date | null): string {
+  return date
+    ? new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date)
+    : '—';
+}
+
+function getErrorMessage(error: unknown): string {
+  if (!(error instanceof QuoteApiError)) return '시세 API에 연결하지 못했습니다. 잠시 후 다시 시도하세요.';
+  switch (error.code) {
+    case 'KIS_RATE_LIMITED': return '시세 요청이 잠시 제한되었습니다. 잠시 후 다시 시도하세요.';
+    case 'KIS_TIMEOUT': return '시세 서버 응답이 지연되고 있습니다. 잠시 후 다시 시도하세요.';
+    case 'INVALID_SYMBOLS': return '관심종목 요청 형식이 올바르지 않습니다.';
+    default: return '시세를 가져오지 못했습니다. 잠시 후 다시 시도하세요.';
+  }
 }
 
 async function refreshQuotes(): Promise<void> {
@@ -43,9 +55,9 @@ async function refreshQuotes(): Promise<void> {
     lastUpdated = new Date();
     statusMessage = isLiveMode ? 'UPDATED · LIVE API' : 'UPDATED · SAMPLE DATA';
     feedbackMessage = isLiveMode ? '실제 시세 조회가 완료되었습니다.' : '새로고침 완료 · 샘플 시세는 변경되지 않습니다.';
-  } catch {
+  } catch (error) {
     statusMessage = 'ERROR · QUOTE LOAD FAILED';
-    feedbackMessage = '시세를 가져오지 못했습니다. 잠시 후 다시 시도하세요.';
+    feedbackMessage = getErrorMessage(error);
   } finally {
     loading = false;
     render();
@@ -69,7 +81,7 @@ function render() {
       <section class="summary" aria-label="시장 요약">
         <div><span>WATCHLIST</span><strong>${stocks.length} SYMBOLS</strong></div>
         <div><span>UPDATED</span><strong id="updated-at">${formatTime(lastUpdated)}</strong></div>
-        <div><span>DATA MODE</span><strong>${isLiveMode ? 'LIVE API' : 'STATIC SAMPLE'}</strong></div>
+        <div><span>DATA MODE</span><strong>${isLiveMode ? 'KIS API' : 'STATIC SAMPLE'}</strong></div>
       </section>
 
       <section aria-labelledby="watchlist-title">
@@ -95,7 +107,7 @@ function render() {
         <div class="stock-grid" id="stock-grid" aria-live="polite"></div>
       </section>
 
-      <p class="data-note">${isLiveMode ? '실제 시세는 KIS Open API를 통해 제공됩니다. 데이터 지연 및 이용약관을 확인하세요.' : '현재 화면은 UI 검증용 샘플 데이터입니다. 투자 판단의 근거로 사용하지 마세요.'}</p>
+      <p class="data-note">${isLiveMode ? '실제 시세는 KIS Open API를 서버 Proxy를 통해 제공합니다. STALE/시간 미확인 시세는 자동매매 입력으로 사용하지 않습니다.' : '현재 화면은 UI 검증용 샘플 데이터입니다. 투자 판단의 근거로 사용하지 마세요.'}</p>
     </main>
   `;
 
@@ -156,3 +168,4 @@ function render() {
 }
 
 render();
+if (isLiveMode) void refreshQuotes();
