@@ -47,16 +47,16 @@
 - [x] 국내주식 시세 Adapter
 - [x] KIS 오류 응답의 내부 오류 모델 변환
 - [x] timeout / retry / rate-limit 정책
-- [ ] 인증정보 로그 마스킹 테스트
+- [x] 인증정보 로그 마스킹 테스트
 
 ### Phase 2 — 시세 서비스 안정화
 목표: 실제 시세를 안전하게 조회하고 UI에 제공한다.
 
-- [ ] `/quote`, `/quotes` 계약 확정
+- [x] `/quote`, `/quotes` 계약 확정
 - [x] 종목 코드 검증
 - [x] KIS 시세 응답 검증 및 변환
 - [x] 장 상태/데이터 시각 처리 기반 (`asOf` 날짜+체결시각 매핑)
-- [ ] stale/missing 데이터 정책
+- [x] stale/missing 데이터 정책 정의
 - [x] Cloudflare Worker 배포
 - [ ] GitHub Pages → Worker 연동
 - [x] 실제 KIS 시세 통합 테스트
@@ -203,17 +203,23 @@ UNKNOWN → RECONCILING → 실제 상태 확정
 
 ## 4. 현재 다음 작업
 
-**Phase 1 — KIS 인증/어댑터 표준화**는 공통 HTTP 클라이언트와 국내주식 시세 Adapter까지 구현했다.
+**Phase 2 — 시세 서비스 안정화**로 진행한다.
 
 현재 Worker는 사용자가 설정한 `APP_KEY` / `APP_SECRET`을 서버 측 Secret으로 사용하고, `KIS_ENVIRONMENT=PAPER`를 기본값으로 하여 모의투자 REST 도메인을 선택한다. `LIVE`는 코드상 지원하지만 기본값이 아니다.
 
-다음 구현 단위는 다음 순서로 진행한다.
+완료된 항목:
 
-1. 인증정보 로그 마스킹 테스트
-2. `/quote`, `/quotes` 응답 계약 및 stale/missing 정책 확정
-3. GitHub Pages → Worker 연동
-4. Phase 2 시세 서비스 안정화 완료 후 계좌/잔고 읽기 전용 모델로 진행
-5. 문서 업데이트 및 검증
+1. 인증정보 로그 마스킹 테스트 및 CI 검증
+2. `/quote`, `/quotes` 응답 계약 정의
+3. stale/missing 데이터 정책 정의
+4. KIS 오류를 브라우저에 노출하지 않는 오류 계약 유지
+
+다음 구현 단위:
+
+1. GitHub Pages → Worker 연동
+2. 프론트엔드 실시간 시세 표시 및 stale/missing 상태 UI
+3. Phase 2 시세 서비스 안정화 완료 검증
+4. 계좌/잔고 읽기 전용 모델로 진행
 
 ## 5. 완료 판정
 
