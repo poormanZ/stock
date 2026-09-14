@@ -31,12 +31,17 @@ function getEnvironment(env: Env): KISEnvironment {
   return env.KIS_ENVIRONMENT === 'LIVE' ? 'LIVE' : 'PAPER';
 }
 
-function errorResponse(error: unknown, origin: string, scope: 'QUOTE' | 'ACCOUNT'): Response {
+function errorResponse(error: unknown, origin: string, scope: 'QUOTE' | 'ACCOUNT' | 'BUYABLE'): Response {
   if (error instanceof KISHttpError) {
     const status = error.code === 'KIS_TIMEOUT' ? 504 : error.code === 'KIS_RATE_LIMITED' ? 429 : 502;
     return json({ error: error.code }, status, origin);
   }
-  return json({ error: scope === 'ACCOUNT' ? 'ACCOUNT_UNAVAILABLE' : 'QUOTE_UNAVAILABLE' }, 502, origin);
+  const errorCode = scope === 'ACCOUNT'
+    ? 'ACCOUNT_UNAVAILABLE'
+    : scope === 'BUYABLE'
+      ? 'BUYABLE_UNAVAILABLE'
+      : 'QUOTE_UNAVAILABLE';
+  return json({ error: errorCode }, 502, origin);
 }
 
 function createClient(env: Env): KISHttpClient {
@@ -46,6 +51,12 @@ function createClient(env: Env): KISHttpClient {
     environment: getEnvironment(env),
     baseUrl: env.KIS_BASE_URL,
   });
+}
+
+function parseOrderType(value: string | null): 'market' | 'limit' | null {
+  if (!value || value === 'market') return 'market';
+  if (value === 'limit') return 'limit';
+  return null;
 }
 
 export default {
@@ -63,6 +74,25 @@ export default {
         return json(await adapter.getSnapshot(), 200, origin);
       } catch (error) {
         return errorResponse(error, origin, 'ACCOUNT');
+      }
+    }
+
+    if (url.pathname === '/buyable') {
+      if (!env.ACCOUNT_NUM) return json({ error: 'ACCOUNT_NOT_CONFIGURED' }, 503, origin);
+      const symbol = url.searchParams.get('symbol')?.trim() ?? '';
+      const priceText = url.searchParams.get('price')?.trim() ?? '';
+      const orderType = parseOrderType(url.searchParams.get('orderType'));
+      const price = Number(priceText);
+
+      if (!/^\d{6}$/.test(symbol) || !Number.isFinite(price) || price <= 0 || !orderType) {
+        return json({ error: 'INVALID_BUYABLE_PARAMS' }, 400, origin);
+      }
+
+      try {
+        const adapter = new KISAccountAdapter(createClient(env), getEnvironment(env), env.ACCOUNT_NUM);
+        return json(await adapter.getBuyable(symbol, price, orderType), 200, origin);
+      } catch (error) {
+        return errorResponse(error, origin, 'BUYABLE');
       }
     }
 
