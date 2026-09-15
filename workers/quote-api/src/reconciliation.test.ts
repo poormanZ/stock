@@ -37,4 +37,33 @@ describe('reconcile', () => {
     expect(result.canPlaceNewOrders).toBe(false);
     expect(result.differences[0].type).toBe('ORDER_STATUS_MISMATCH');
   });
+
+  it('does not block on a historical filled internal order missing from today KIS history', () => {
+    const result = reconcile(
+      { positions: [{ symbol: '005930', quantity: 10 }], orders: [] },
+      { positions: [{ symbol: '005930', quantity: 10 }], orders: [{ brokerOrderId: 'old-order', status: 'FILLED', symbol: '005930', side: 'buy', quantity: 10, executedQuantity: 10 }] },
+    );
+    expect(result).toEqual({ status: 'MATCHED', canPlaceNewOrders: true, differences: [] });
+  });
+
+  it('still blocks when an active internal order is missing from KIS history', () => {
+    const result = reconcile(
+      { positions: [], orders: [] },
+      { positions: [], orders: [{ brokerOrderId: 'active-order', status: 'ACCEPTED', symbol: '005930', side: 'buy', quantity: 10, executedQuantity: 0 }] },
+    );
+    expect(result.canPlaceNewOrders).toBe(false);
+    expect(result.differences).toContainEqual(expect.objectContaining({ type: 'UNEXPECTED_INTERNAL_ORDER', brokerOrderId: 'active-order' }));
+  });
+
+  it('keeps terminal canceled and rejected orders from blocking after rollover', () => {
+    const result = reconcile(
+      { positions: [], orders: [] },
+      { positions: [], orders: [
+        { brokerOrderId: 'canceled', status: 'CANCELED', symbol: '005930', side: 'buy', quantity: 10, executedQuantity: 0 },
+        { brokerOrderId: 'rejected', status: 'REJECTED', symbol: '005930', side: 'buy', quantity: 10, executedQuantity: 0 },
+      ] },
+    );
+    expect(result.status).toBe('MATCHED');
+    expect(result.canPlaceNewOrders).toBe(true);
+  });
 });
