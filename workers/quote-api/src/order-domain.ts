@@ -1,4 +1,4 @@
-export const ORDER_STATUSES = ['CREATED', 'SUBMITTING', 'SUBMITTED', 'ACCEPTED', 'PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'REJECTED', 'UNKNOWN', 'RECONCILING'] as const;
+export const ORDER_STATUSES = ['CREATED', 'SUBMITTING', 'SUBMITTED', 'ACCEPTED', 'PARTIALLY_FILLED', 'FILLED', 'CANCEL_PENDING', 'CANCELED', 'REJECTED', 'UNKNOWN', 'RECONCILING'] as const;
 export type OrderStatus = typeof ORDER_STATUSES[number];
 export type OrderSide = 'buy' | 'sell';
 export type OrderType = 'market' | 'limit';
@@ -33,14 +33,15 @@ export interface CreateOrderRequest {
 const transitions: Record<OrderStatus, readonly OrderStatus[]> = {
   CREATED: ['SUBMITTING', 'CANCELED'],
   SUBMITTING: ['SUBMITTED', 'REJECTED', 'UNKNOWN'],
-  SUBMITTED: ['ACCEPTED', 'PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'REJECTED', 'UNKNOWN'],
-  ACCEPTED: ['PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'REJECTED', 'UNKNOWN'],
-  PARTIALLY_FILLED: ['PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'UNKNOWN'],
+  SUBMITTED: ['ACCEPTED', 'PARTIALLY_FILLED', 'FILLED', 'CANCEL_PENDING', 'CANCELED', 'REJECTED', 'UNKNOWN'],
+  ACCEPTED: ['PARTIALLY_FILLED', 'FILLED', 'CANCEL_PENDING', 'CANCELED', 'REJECTED', 'UNKNOWN'],
+  PARTIALLY_FILLED: ['PARTIALLY_FILLED', 'FILLED', 'CANCEL_PENDING', 'CANCELED', 'UNKNOWN'],
   FILLED: [],
+  CANCEL_PENDING: ['PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'UNKNOWN'],
   CANCELED: [],
   REJECTED: [],
   UNKNOWN: ['RECONCILING'],
-  RECONCILING: ['SUBMITTED', 'ACCEPTED', 'PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'REJECTED', 'UNKNOWN'],
+  RECONCILING: ['SUBMITTED', 'ACCEPTED', 'PARTIALLY_FILLED', 'FILLED', 'CANCEL_PENDING', 'CANCELED', 'REJECTED', 'UNKNOWN'],
 };
 
 export const CANCELLABLE_STATUSES: ReadonlySet<OrderStatus> = new Set(['SUBMITTED', 'ACCEPTED', 'PARTIALLY_FILLED']);
@@ -69,7 +70,6 @@ export function isValidOrderRequest(value: unknown): value is CreateOrderRequest
   }
 }
 
-/** 요청의 알려진 필드만 복사해 CREATED 주문을 만든다 (클라이언트가 보낸 임의 필드가 저장되지 않도록) */
 export function createOrder(request: CreateOrderRequest, now = new Date().toISOString()): Order {
   return {
     id: request.id,
