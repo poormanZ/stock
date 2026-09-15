@@ -1,5 +1,5 @@
 import type { Order } from './order-domain';
-import type { ReconciliationState } from './reconciliation';
+import type { ReconciliationPosition, ReconciliationState } from './reconciliation';
 
 export interface InternalState extends ReconciliationState {
   updatedAt: string;
@@ -20,6 +20,22 @@ export class InternalStateStore {
     const state: InternalState = {
       positions: next.positions,
       orders: next.orders,
+      orderRecords: current.orderRecords ?? [],
+      updatedAt: new Date().toISOString(),
+    };
+    await this.state.storage.put('state', state);
+    return state;
+  }
+
+  /**
+   * Explicit operator-acknowledged broker snapshot sync.
+   * The order ledger is intentionally preserved; position sync never invents fills/orders.
+   */
+  async syncPositions(positions: ReconciliationPosition[]): Promise<InternalState> {
+    const current = await this.get();
+    const state: InternalState = {
+      positions,
+      orders: current.orders,
       orderRecords: current.orderRecords ?? [],
       updatedAt: new Date().toISOString(),
     };
@@ -67,7 +83,10 @@ export class InternalStateStoreDO {
       return Response.json(await this.store.replace(body));
     }
     if (request.method === 'POST') {
-      const body = await request.json().catch(() => null) as { action?: string; order?: Order } | null;
+      const body = await request.json().catch(() => null) as { action?: string; order?: Order; positions?: ReconciliationPosition[] } | null;
+      if (body?.action === 'sync-positions' && Array.isArray(body.positions)) {
+        return Response.json(await this.store.syncPositions(body.positions));
+      }
       if (body?.action !== 'apply-order' || !body.order) return Response.json({ error: 'INVALID_INTERNAL_STATE_ACTION' }, { status: 400 });
       return Response.json(await this.store.applyOrder(body.order));
     }
