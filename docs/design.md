@@ -180,6 +180,9 @@ AccountSnapshot     asOf, environment, source, cash, settlementD1Cash, settlemen
                     totalEquity, netAssetValue, positions: AccountPosition[]
 AccountPosition     symbol, name, quantity, averagePrice, currentPrice, purchaseAmount,
                     evaluationAmount, profitLossAmount, profitLossPercent
+Signal              action('buy'|'sell'|'hold'), reason, price?(신호 봉 내 즉시 체결 가정 가격. 백테스트 전용)
+StrategyContext     symbol, candles, position{quantity, averagePrice, entryDate?}, intraday?(장중 진행 봉 여부)
+ExitRules           stopLossPct(7), takeProfitPct(0), trailingStopPct(10)
 CreateOrderRequest  id, clientOrderId, symbol, side('buy'|'sell'), orderType('market'|'limit'),
                     quantity(정수 > 0), limitPrice?(limit일 때 필수, market일 때 금지),
                     reason?(≤200자. 전략 신호/손절/익절/manual. KIS로 전송하지 않고 내부 기록·감사 로그에만 남김)
@@ -268,5 +271,5 @@ src/
 - `VITE_QUOTE_API_BASE_URL`이 없으면 샘플 시세 모드.
 - 사용하는 Worker 엔드포인트: `/quotes`, `/account`, `/dry-run`, `/orders`, `/reconciliation`, `/risk`, `/trading/status`, `/audit?limit=40`, `/dry-run/orders`, `/dry-run/reset`, `/trading/start|stop|run`, `/risk/kill-switch`.
 - DRY_RUN 주문 버튼은 Kill Switch와 시세 유효성에만 의존한다. reconciliation 결과는 정보용 배지로 표시한다.
-- 자동매매 패널은 DRY_RUN 모드(관심종목, SMA 5/20)만 시작할 수 있다. PAPER/LIVE는 UI에서 시작하지 않는다.
+- 자동매매 패널은 DRY_RUN 모드만 시작할 수 있으며 `src/strategies.ts`의 프리셋(기본: SMA 10/30 + 200일 필터, 손절 7%/트레일링 10%) 중 하나를 고른다. `candleBars`는 보내지 않고 Worker가 전략 워밍업에 맞춰 정한다. PAPER/LIVE는 UI에서 시작하지 않는다.
 - 브라우저는 KIS Secret을 보유하지 않으며 KIS 주문 API를 직접 호출하지 않는다.

@@ -14,6 +14,7 @@ import { renderMarket } from './views/market';
 import { renderOrderPanel } from './views/orderPanel';
 import { renderSummary } from './views/summary';
 import { renderTradingPanel } from './views/tradingPanel';
+import { findPreset } from './strategies';
 
 const root = document.querySelector<HTMLDivElement>('#app');
 if (!root) throw new Error('Application root element was not found.');
@@ -160,15 +161,21 @@ async function submitDryRun(): Promise<void> {
 
 const resetDryRun = () => control('DRY_RUN 초기화', async () => { await api.resetDryRun(DRY_RUN_INITIAL_CASH); }, 'DRY_RUN 가상 계좌를 1,000만원으로 초기화할까요? 주문 이력도 지워집니다.');
 
-const startTrading = () => control('자동매매 시작', async () => {
+const startTrading = () => {
+  const preset = findPreset(state.strategyPreset);
   const symbols = state.stocks.map((s) => s.symbol).slice(0, 10);
-  // 설정이 없거나 종목이 바뀐 경우에만 새 설정을 보낸다. ERROR/EMERGENCY_STOP 재시작은 기존 설정을 유지한다
   const current = state.trading?.config;
-  const sameConfig = current && current.mode === 'DRY_RUN' && current.symbols.join() === symbols.join();
-  await api.startTrading(sameConfig ? undefined : { mode: 'DRY_RUN', symbols, strategy: { id: 'sma-crossover', params: { fast: 5, slow: 20 } }, candleBars: 60 });
-}, state.trading?.status === 'EMERGENCY_STOP' || state.trading?.status === 'ERROR'
-  ? '엔진을 다시 시작할까요? 원인이 해소되었는지 감사 로그에서 확인하세요.'
-  : `관심종목 ${Math.min(state.stocks.length, 10)}개를 DRY_RUN 자동매매(SMA 5/20)로 시작할까요? 5분마다 KIS 시세로 평가하고 가상 주문만 냅니다.`);
+  // 종목·전략·청산 규칙이 모두 같으면 기존 설정을 유지해 재시작한다(ERROR/EMERGENCY_STOP 복구)
+  const sameConfig = Boolean(current && current.mode === 'DRY_RUN' && current.symbols.join() === symbols.join()
+    && JSON.stringify(current.strategy) === JSON.stringify(preset.config.strategy)
+    && current.exit.stopLossPct === preset.config.exit.stopLossPct && current.exit.takeProfitPct === preset.config.exit.takeProfitPct && (current.exit.trailingStopPct ?? 0) === preset.config.exit.trailingStopPct);
+  return control('자동매매 시작', async () => {
+    // candleBars는 보내지 않는다. Worker가 전략 워밍업에 맞춰 정한다
+    await api.startTrading(sameConfig ? undefined : { mode: 'DRY_RUN', symbols, ...preset.config });
+  }, state.trading?.status === 'EMERGENCY_STOP' || state.trading?.status === 'ERROR'
+    ? `엔진을 다시 시작할까요? 원인이 해소되었는지 감사 로그에서 확인하세요.${sameConfig ? '' : ' 전략 설정이 바뀌어 새 설정으로 시작합니다.'}`
+    : `관심종목 ${symbols.length}개를 "${preset.label}" DRY_RUN 자동매매로 시작할까요? 5분마다 KIS 시세로 평가하고 가상 주문만 냅니다.`);
+};
 
 const stopTrading = () => control('자동매매 정지', async () => { await api.stopTrading(); });
 const runTradingNow = () => control('수동 1회 실행', async () => {
@@ -189,7 +196,7 @@ function selectSymbol(symbol: string): void {
 }
 
 function persistPrefs(): void {
-  savePrefs({ autoRefresh: state.autoRefresh, historyTab: state.historyTab });
+  savePrefs({ autoRefresh: state.autoRefresh, historyTab: state.historyTab, strategyPreset: state.strategyPreset });
 }
 
 function render(): void {
@@ -238,6 +245,7 @@ app.addEventListener('input', (event) => {
 app.addEventListener('change', (event) => {
   const target = event.target as HTMLSelectElement;
   if (target.dataset.field === 'symbol') selectSymbol(target.value);
+  if (target.dataset.field === 'strategy-preset') { state.strategyPreset = target.value; persistPrefs(); render(); }
   // 수량·가격 입력은 포커스를 잃을 때만 미리보기를 다시 그린다
   if (target.dataset.field === 'quantity' || target.dataset.field === 'limit-price') render();
 });

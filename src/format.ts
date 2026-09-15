@@ -92,8 +92,16 @@ export function describeReason(reason?: string): string {
   if (stop) return `손절 (평균단가 대비 ${stop[1]}%)`;
   const take = /^TAKE_PROFIT:(.+)%/.exec(reason);
   if (take) return `익절 (평균단가 대비 +${take[1].replace('+', '')}%)`;
-  const cross = /^SMA(\d+)([<>])SMA(\d+)(.*)$/.exec(reason);
-  if (cross) return `${cross[1]}일선이 ${cross[3]}일선을 ${cross[2] === '>' ? '상향' : '하향'} 돌파${cross[4].includes('NO_SIZE') ? ' · 주문 가능 수량 없음' : ''}`;
+  const trailing = /^TRAILING_STOP:(.+)%/.exec(reason);
+  if (trailing) return `트레일링 스탑 (진입 후 최고가 대비 ${trailing[1]}%)`;
+  const cross = /^SMA(\d+)([<>])SMA(\d+)(?:\+T(\d+))?(.*)$/.exec(reason);
+  if (cross) return `${cross[1]}일선이 ${cross[3]}일선을 ${cross[2] === '>' ? '상향' : '하향'} 돌파${cross[4] ? ` (${cross[4]}일선 위)` : ''}${cross[5].includes('NO_SIZE') ? ' · 주문 가능 수량 없음' : ''}`;
+  const momentum = /^MOMENTUM_(UP|DOWN):(.+)%(.*)$/.exec(reason);
+  if (momentum) return `${momentum[1] === 'UP' ? '모멘텀 양전환' : '모멘텀 음전환'} (기준 기간 수익률 ${momentum[2]}%)${momentum[3].includes('NO_SIZE') ? ' · 주문 가능 수량 없음' : ''}`;
+  const below = /^BELOW_TREND:(\d+)/.exec(reason);
+  if (below) return `${below[1]}일선 아래여서 진입 보류`;
+  const vb = /^VB_BREAKOUT:k=(.+)$/.exec(reason);
+  if (vb) return `변동성 돌파 (k=${vb[1]})`;
   const map: Record<string, string> = {
     NO_SIGNAL: '신호 없음',
     WARMUP: '데이터 준비 중',
@@ -102,6 +110,7 @@ export function describeReason(reason?: string): string {
     MARKET_CLOSED: '장 마감',
     KILL_SWITCH_ACTIVE: 'Kill Switch 활성',
     ALREADY_PLACED: '오늘 이미 주문함',
+    VB_EXIT_NEXT_OPEN: '변동성 돌파 익일 시가 청산',
     manual: '수동 주문',
     dashboard: '대시보드',
   };

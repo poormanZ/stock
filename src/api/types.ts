@@ -111,7 +111,7 @@ export interface TradingConfig {
   mode: 'DRY_RUN' | 'PAPER';
   symbols: string[];
   strategy: { id: string; params: Record<string, number> };
-  exit: { stopLossPct: number; takeProfitPct: number };
+  exit: { stopLossPct: number; takeProfitPct: number; trailingStopPct?: number };
   sizing: { cashFraction: number; maxOrderAmount: number; maxOrderQuantity: number; maxPositionQuantity: number };
   candleBars: number;
 }

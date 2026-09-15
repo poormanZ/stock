@@ -127,6 +127,9 @@ b.sell, .sell { color: var(--sell); }
 .order-preview b { color: #cbd5e1; font-size: 13px; }
 
 /* 자동매매 */
+.preset { display: block; margin: 0 0 12px; color: var(--muted); font-size: 11px; }
+.preset select { display: block; width: 100%; margin: 6px 0; padding: 10px 11px; border: 1px solid var(--line-2); border-radius: 7px; color: var(--text); background: #080e14; font-size: 13px; }
+.preset small { display: block; line-height: 1.5; }
 .kv { display: grid; gap: 8px; margin: 0 0 12px; }
 .kv > div { display: grid; grid-template-columns: 90px 1fr; gap: 10px; align-items: baseline; padding: 8px 10px; border: 1px solid #1d2935; border-radius: 8px; background: #080e14; }
 .kv dt { color: var(--muted); font-size: 11px; }

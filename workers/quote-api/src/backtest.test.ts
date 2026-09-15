@@ -7,7 +7,7 @@ function series(closes: number[]): Candle[] {
 }
 
 const zeroCost = { feeBps: 0, sellTaxBps: 0, slippageBps: 0 };
-const exit = { stopLossPct: 0, takeProfitPct: 0 };
+const exit = { stopLossPct: 0, takeProfitPct: 0, trailingStopPct: 0 };
 const sizing = { cashFraction: 1, maxOrderAmount: 10_000_000, maxOrderQuantity: 1000, maxPositionQuantity: 5000 };
 
 /** 홀수 봉에 매수, 짝수 봉에 매도하는 결정적 전략 */
@@ -45,7 +45,7 @@ describe('runBacktest', () => {
   it('honours stop-loss exits and rejects insufficient history', () => {
     const buyOnce: Strategy = { id: 'once', params: {}, warmupBars: 1, evaluate: ({ candles, position }) => (candles.length === 1 && !position ? { action: 'buy', reason: 'first' } : { action: 'hold', reason: '' }) };
     const candles = series([100, 100, 90, 90, 90]);
-    const result = runBacktest({ symbol: '005930', candles, strategy: buyOnce, initialCash: 1_000, config: zeroCost, exit: { stopLossPct: 5, takeProfitPct: 0 }, sizing });
+    const result = runBacktest({ symbol: '005930', candles, strategy: buyOnce, initialCash: 1_000, config: zeroCost, exit: { stopLossPct: 5, takeProfitPct: 0, trailingStopPct: 0 }, sizing });
     expect(result.trades[0]?.reason).toMatch(/^STOP_LOSS/);
     expect(() => runBacktest({ symbol: '005930', candles: series([1, 2]), strategy: smaCrossoverStrategy({ fast: 2, slow: 3 }), initialCash: 1_000, exit, sizing })).toThrow('INSUFFICIENT_CANDLES');
   });

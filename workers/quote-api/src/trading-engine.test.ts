@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Env } from './env';
 import type { Candle } from './strategy';
-import { autoClientOrderId, runTradingCycle, type TradingDeps } from './trading-engine';
+import { autoClientOrderId, entryDatesFromOrders, runTradingCycle, type TradingDeps } from './trading-engine';
 import type { TradingConfig, TradingState } from './trading-state';
 
 const env = {} as Env;
 const config: TradingConfig = {
   mode: 'DRY_RUN',
   symbols: ['005930'],
-  strategy: { id: 'sma-crossover', params: { fast: 2, slow: 3 } },
-  exit: { stopLossPct: 5, takeProfitPct: 10 },
+  strategy: { id: 'sma-crossover', params: { fast: 2, slow: 3, trend: 0 } },
+  exit: { stopLossPct: 5, takeProfitPct: 10, trailingStopPct: 0 },
   sizing: { cashFraction: 0.5, maxOrderAmount: 1_000_000, maxOrderQuantity: 1000, maxPositionQuantity: 5000 },
   candleBars: 30,
 };
@@ -39,6 +39,20 @@ function deps(overrides: Partial<TradingDeps> = {}, state: Partial<TradingState>
     ...overrides,
   };
 }
+
+describe('entryDatesFromOrders', () => {
+  it('uses the latest filled buy per symbol as the entry date', () => {
+    const base = { id: 'x', clientOrderId: 'x', orderType: 'market' as const, quantity: 1, averageExecutedPrice: 1, status: 'FILLED' as const, updatedAt: '' };
+    const dates = entryDatesFromOrders([
+      { ...base, symbol: '005930', side: 'buy', executedQuantity: 1, createdAt: '2026-09-10T01:00:00.000Z' },
+      { ...base, symbol: '005930', side: 'buy', executedQuantity: 1, createdAt: '2026-09-14T01:00:00.000Z' },
+      { ...base, symbol: '005930', side: 'sell', executedQuantity: 1, createdAt: '2026-09-15T01:00:00.000Z' },
+      { ...base, symbol: '000660', side: 'buy', executedQuantity: 0, createdAt: '2026-09-15T01:00:00.000Z' },
+    ]);
+    expect(dates.get('005930')).toBe('20260914');
+    expect(dates.has('000660')).toBe(false);
+  });
+});
 
 describe('runTradingCycle', () => {
   it('does nothing unless the engine is RUNNING', async () => {

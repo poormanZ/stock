@@ -73,7 +73,7 @@ RUNNING ─(Kill Switch)→ EMERGENCY_STOP ─(Kill Switch 해제 후 start)→ 
 
 | 작업 | 호출 |
 |---|---|
-| 설정 | `POST /trading/configure {config}` — `mode`(DRY_RUN/PAPER), `symbols`(≤10), `strategy {id, params}`, `exit`, `sizing`, `candleBars` |
+| 설정 | `POST /trading/configure {config}` — `mode`(DRY_RUN/PAPER), `symbols`(≤10), `strategy {id, params}`, `exit`, `sizing`, `candleBars`(생략 시 워밍업+10, 30~400) |
 | 시작 / 정지 | `POST /trading/start` / `POST /trading/stop` |
 | 수동 1회 실행 | `POST /trading/run` (cron과 동일 경로, lease 적용) |
 | 상태 / 이력 | `GET /trading/status`, `GET /trading/runs?limit=` |
@@ -90,7 +90,7 @@ RUNNING ─(Kill Switch)→ EMERGENCY_STOP ─(Kill Switch 해제 후 start)→ 
 
 - 상단 상태 스트립: API 연결, 엔진 상태(정지/준비/실행 중/오류/긴급정지), Kill Switch, 마지막 동기화, 자동 새로고침(60초) 토글.
 - 요약 타일: 엔진, DRY_RUN 현금, DRY_RUN 당일 실현손익, 계좌 현금, KIS↔내부 대조, 최근 실행.
-- 자동매매 엔진 카드: "DRY_RUN 자동매매 시작"은 관심종목(최대 10개)을 SMA 5/20으로 설정해 시작한다. `EMERGENCY_STOP`/`ERROR`에서는 버튼이 "재시작"으로 바뀌고 기존 설정을 유지한다. Kill Switch가 켜져 있으면 시작 불가.
+- 자동매매 엔진 카드: 프리셋(기본 "SMA 10/30 + 200일 추세 필터", 그 외 SMA 5/20+트레일링, 절대 모멘텀, 이전 기본)을 고르고 "DRY_RUN 자동매매 시작"을 누르면 관심종목(최대 10개)으로 시작한다. `EMERGENCY_STOP`/`ERROR`에서는 버튼이 "재시작"으로 바뀌며, 프리셋이 바뀌지 않았으면 기존 설정을 유지한다. Kill Switch가 켜져 있으면 시작 불가. 근거는 `docs/trading.md` §9.
 - 이력 탭 "자동매매 실행": 행을 클릭하면 종목별 신호(관망 포함)와 주문 결과, 매수/매도 사유가 펼쳐진다. "DRY_RUN 주문" 탭의 사유 열은 같은 정보를 주문 단위로 보여준다.
 - 대시보드는 PAPER/LIVE 자동 실행을 시작하지 않으며 실계좌 주문 API를 호출하지 않는다.
 

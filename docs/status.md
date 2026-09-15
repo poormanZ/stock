@@ -102,6 +102,13 @@
 - `live-trading-gate.ts`, `live-routes.ts`, `kis-live-order-adapter.ts` (`kis-cash-order-adapter.ts` 공통화)
 - `/live/status|arm|disarm|orders|orders/cancel`. 기본 403 `LIVE_TRADING_DISABLED`
 
+### 전략 재검토 (2026-09-15 추가)
+
+- 6종목 2년 일봉 백테스트로 이전 기본(SMA 5/20, 손절5/익절10)이 세 구간 모두 수익률−MDD 음수임을 확인. 기본을 **SMA 10/30 + 200일 추세 필터, 손절 7%/트레일링 10%** 로 변경 (`docs/trading.md` §9)
+- 전략 추가: `momentum`(절대 모멘텀), `volatility-breakout`(변동성 돌파). 트레일링 스탑(`trailingStopPct`), `StrategyContext.intraday`, `Signal.price`(백테스트 봉 내 체결) 도입
+- 엔진이 마지막 매수 체결일(`entryDate`)을 포지션에 붙여 보유 기간 규칙·트레일링 스탑을 지원. `candleBars` 생략 시 워밍업에 맞춰 자동 결정
+- 대시보드에 전략 프리셋 선택 추가 (`src/strategies.ts`)
+
 ### 대시보드 재구성 / 주문 사유 (2026-09-15 추가)
 
 - `Order.reason` 추가: 자동매매 신호 사유와 수동 주문(`manual`)이 주문 기록·감사 로그·실행 이력(`TradingRunOrder.reason`, `price`)에 남는다

@@ -56,7 +56,8 @@ integration/                 실제 KIS PAPER 읽기 전용 통합 테스트 (�
 - **오류 매핑**: 어댑터는 `KISHttpError` / `KISRejectedError` / `KISAccountConfigError`를 던지고, 라우트는 `errorResponse(error, origin, scope)`로 변환한다. 메시지 문자열을 정규식으로 파싱해 분기하지 않는다.
 - **PAPER/LIVE 안전장치(환경 검사, 계좌 검사, 장 운영시간, reconciliation Gate, Risk Manager, Kill Switch)는 DRY_RUN 편의를 위해 약화하지 않는다.** DRY_RUN은 KIS 외부 조회 없이 Risk Manager와 Kill Switch만 적용한다.
 - **라우트를 추가하면** `index.ts` 테이블에 등록하고 `index.test.ts`에 최소 1개 케이스(성공 또는 검증 실패)를 추가한다.
-- **전략은 순수 함수로만 작성한다.** `strategy.ts`에서 KIS·DO·fetch를 import하지 않는다. 새 전략은 `STRATEGIES`에 등록하고 결정적 캔들로 테스트한다.
+- **전략은 순수 함수로만 작성한다.** `strategy.ts`에서 KIS·DO·fetch를 import하지 않는다. 새 전략은 `STRATEGIES`에 등록하고 결정적 캔들로 테스트한다. 장중 판단과 일봉 판단이 다르면 `context.intraday`로 분기하고, 종가를 미리 아는 조건(look-ahead)을 백테스트 경로에 넣지 않는다.
+- **기본 전략·청산 규칙을 바꾸려면** 6종목 이상·전반/후반 분할 백테스트 근거를 `docs/trading.md` §9에 남기고, 대시보드 프리셋(`src/strategies.ts`)과 테스트를 함께 갱신한다.
 - **엔진(`trading-engine.ts`)은 `TradingDeps`를 통해서만 외부와 통신한다.** 새 외부 의존이 필요하면 deps에 추가하고 `createDefaultDeps`와 테스트 stub을 함께 갱신한다. 스케줄러에 LIVE 모드를 추가하지 않는다.
 - **실계좌 경로는 `checkLiveTradingGate`를 우회하지 않는다.** `LIVE_TRADING_ENABLED`/`PAPER_VERIFICATION_DATE`를 `wrangler.toml` `[vars]`에 넣지 않는다. `KISLiveOrderAdapter`는 `live-routes.ts` 밖에서 생성하지 않는다.
 - **취소 접수는 `CANCEL_PENDING`으로 기록한다.** `CANCELED`는 resync가 KIS 내역으로 확정할 때만 쓴다.

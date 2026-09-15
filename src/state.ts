@@ -1,6 +1,8 @@
 import type { Account, AuditLog, DryRunState, KillSwitch, OrdersResponse, Reconciliation, TradingState } from './api/types';
 import type { StockQuote } from './types/stock';
 
+import { DEFAULT_PRESET_ID } from './strategies';
+
 export type HistoryTab = 'dry-run' | 'runs' | 'audit' | 'kis';
 export type MessageTone = 'info' | 'ok' | 'bad';
 
@@ -28,11 +30,12 @@ export interface AppState {
   limitPrice: number;
   historyTab: HistoryTab;
   expandedRunId: string | null;
+  strategyPreset: string;
 }
 
 const PREFS_KEY = 'stock-dashboard.prefs';
 
-interface Prefs { autoRefresh?: boolean; historyTab?: HistoryTab; }
+interface Prefs { autoRefresh?: boolean; historyTab?: HistoryTab; strategyPreset?: string; }
 
 export function loadPrefs(): Prefs {
   try {
@@ -77,6 +80,7 @@ export function createState(live: boolean, stocks: StockQuote[]): AppState {
     limitPrice: 0,
     historyTab: prefs.historyTab ?? 'dry-run',
     expandedRunId: null,
+    strategyPreset: prefs.strategyPreset ?? DEFAULT_PRESET_ID,
   };
 }
 

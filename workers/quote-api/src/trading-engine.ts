@@ -10,6 +10,8 @@ import { getMarketSession, type MarketSession } from './market-session';
 import type { CreateOrderRequest } from './order-domain';
 import { paperPrecheck, placePaperOrder, resyncPaperOrdersWithKis } from './paper-routes';
 import { acquireTradingLease, appendAudit, readDryRunState, readInternalState, readKillSwitch, readTradingState, recordTradingRun, releaseTradingLease } from './state-clients';
+import { toKstDate } from './kis-common';
+import type { Order } from './order-domain';
 import { checkExitRules, createStrategy, sizeEntry, type Candle, type Signal, type StrategyPosition } from './strategy';
 import type { TradingErrorSource, TradingMode, TradingRun, TradingRunOrder, TradingRunSignal, TradingState, TradingStatus } from './trading-state';
 
@@ -60,6 +62,17 @@ function wrap(source: TradingErrorSource, error: unknown): TradingError {
   return error instanceof TradingError ? error : new TradingError(source, errorMessage(error));
 }
 
+/** 종목별 마지막 매수 체결 주문의 KST 날짜. 보유 기간 규칙·트레일링 스탑의 기준이 된다 */
+export function entryDatesFromOrders(orders: Order[]): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const order of orders) {
+    if (order.side !== 'buy' || order.executedQuantity <= 0) continue;
+    const date = toKstDate(order.createdAt);
+    if (date && (result.get(order.symbol) ?? '') <= date) result.set(order.symbol, date);
+  }
+  return result;
+}
+
 export function createDefaultDeps(env: Env): TradingDeps {
   return {
     now: () => new Date(),
@@ -74,10 +87,12 @@ export function createDefaultDeps(env: Env): TradingDeps {
     readPortfolio: async (mode) => {
       if (mode === 'DRY_RUN') {
         const state = await readDryRunState(env);
-        return { cash: state.cash, positions: state.positions };
+        const entries = entryDatesFromOrders(state.orders);
+        return { cash: state.cash, positions: state.positions.map((position) => ({ ...position, entryDate: entries.get(position.symbol) })) };
       }
       const [internal, account] = await Promise.all([readInternalState(env), createAccountAdapter(env).getSnapshot()]);
-      return { cash: account.cash, positions: internal.positions.map((position) => ({ symbol: position.symbol, quantity: position.quantity, averagePrice: position.averagePrice ?? 0 })) };
+      const entries = entryDatesFromOrders(internal.orderRecords ?? []);
+      return { cash: account.cash, positions: internal.positions.map((position) => ({ symbol: position.symbol, quantity: position.quantity, averagePrice: position.averagePrice ?? 0, entryDate: entries.get(position.symbol) })) };
     },
     placeOrder: async (mode, request, referencePrice) => {
       if (mode === 'DRY_RUN') return placeDryRunOrder(env, { request, referencePrice }, 'SCHEDULER');
@@ -179,7 +194,7 @@ export async function runTradingCycle(env: Env, trigger: 'cron' | 'manual', deps
       const held = portfolio.positions.find((position) => position.symbol === symbol && position.quantity > 0) ?? null;
       let signal: Signal;
       try {
-        signal = checkExitRules(held, price, config.exit) ?? strategy.evaluate({ symbol, candles, position: held });
+        signal = checkExitRules(held, price, config.exit, candles) ?? strategy.evaluate({ symbol, candles, position: held, intraday: candles[candles.length - 1]?.date === today });
       } catch (error) {
         throw wrap('STRATEGY', error);
       }

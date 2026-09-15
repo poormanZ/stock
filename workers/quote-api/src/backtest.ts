@@ -27,6 +27,8 @@ export interface BacktestMetrics {
   maxDrawdownPct: number;
   totalFees: number;
   totalTaxes: number;
+  /** 같은 구간(워밍업 이후 첫 봉 시가 → 마지막 종가) 단순 보유 수익률. 전략 비교 기준선 */
+  buyAndHoldReturnPct: number;
 }
 
 export interface BacktestResult {
@@ -52,6 +54,7 @@ export interface BacktestInput {
 
 /**
  * 봉 i 종가에서 신호를 내고 봉 i+1 시가에 체결한다(미래 참조 방지).
+ * 신호에 price가 있으면(돌파 가격, 당일 시가 등) 봉 i 안에서 그 가격으로 즉시 체결한다.
  * 체결·수수료·세금·슬리피지는 DRY_RUN 시뮬레이터를 그대로 사용해 실행 경로와 같은 비용 모델을 쓴다.
  */
 export function runBacktest(input: BacktestInput): BacktestResult {
@@ -70,7 +73,12 @@ export function runBacktest(input: BacktestInput): BacktestResult {
   let entry: { date: string; quantity: number; price: number; cost: number } | null = null;
   let sequence = 0;
 
-  const positionOf = () => state.positions.find((position) => position.symbol === symbol) ?? null;
+  const positionOf = () => {
+    const held = state.positions.find((position) => position.symbol === symbol);
+    return held ? { quantity: held.quantity, averagePrice: held.averagePrice, entryDate: entry?.date } : null;
+  };
+  /** 신호 봉 내 체결 가격은 그 봉의 고가·저가 안으로 제한한다 */
+  const clamp = (price: number, bar: Candle) => Math.min(Math.max(price, bar.low), bar.high);
   // 매수 비용 = 체결가(슬리피지 반영) × (1 + 수수료)
   const entryCostBps = ((1 + config.slippageBps / 10_000) * (1 + config.feeBps / 10_000) - 1) * 10_000;
   // 시뮬레이터와 같은 반올림으로 총비용을 계산해 현금을 넘지 않는 수량으로 줄인다
@@ -89,24 +97,27 @@ export function runBacktest(input: BacktestInput): BacktestResult {
     const next = candles[i + 1];
     const position = positionOf();
 
-    const signal = checkExitRules(position, bar.close, exit) ?? strategy.evaluate({ symbol, candles: window, position });
+    const signal = checkExitRules(position, bar.close, exit, window) ?? strategy.evaluate({ symbol, candles: window, position });
+    const immediate = signal.price !== undefined && signal.price > 0;
+    const fillBar = immediate ? bar : next;
+    const fillPrice = immediate ? clamp(signal.price!, bar) : next.open;
 
     if (signal.action === 'buy' && !position) {
-      const quantity = affordable(sizeEntry(state.cash, next.open, 0, sizing, entryCostBps), next.open);
+      const quantity = affordable(sizeEntry(state.cash, fillPrice, 0, sizing, entryCostBps), fillPrice);
       if (quantity > 0) {
         sequence += 1;
-        const result = simulateOrder(state, { id: `bt-${sequence}`, clientOrderId: `BT-${sequence}`, symbol, side: 'buy', orderType: 'market', quantity }, next.open, quantity, config);
+        const result = simulateOrder(state, { id: `bt-${sequence}`, clientOrderId: `BT-${sequence}`, symbol, side: 'buy', orderType: 'market', quantity }, fillPrice, quantity, config);
         totalFees += result.fee;
-        entry = { date: next.date, quantity, price: result.executedPrice, cost: result.grossAmount + result.fee };
+        entry = { date: fillBar.date, quantity, price: result.executedPrice, cost: result.grossAmount + result.fee };
       }
     } else if (signal.action === 'sell' && position && entry) {
       sequence += 1;
-      const result = simulateOrder(state, { id: `bt-${sequence}`, clientOrderId: `BT-${sequence}`, symbol, side: 'sell', orderType: 'market', quantity: position.quantity }, next.open, position.quantity, config);
+      const result = simulateOrder(state, { id: `bt-${sequence}`, clientOrderId: `BT-${sequence}`, symbol, side: 'sell', orderType: 'market', quantity: position.quantity }, fillPrice, position.quantity, config);
       totalFees += result.fee;
       totalTaxes += result.tax;
       trades.push({
         entryDate: entry.date,
-        exitDate: next.date,
+        exitDate: fillBar.date,
         quantity: position.quantity,
         entryPrice: entry.price,
         exitPrice: result.executedPrice,
@@ -125,6 +136,7 @@ export function runBacktest(input: BacktestInput): BacktestResult {
   const last = candles[candles.length - 1];
   const open = positionOf();
   const finalEquity = state.cash + (open?.quantity ?? 0) * last.close;
+  const firstOpen = candles[strategy.warmupBars - 1]?.open ?? candles[0].open;
   const wins = trades.filter((trade) => trade.pnl > 0);
   const losses = trades.filter((trade) => trade.pnl <= 0);
   const grossProfit = wins.reduce((sum, trade) => sum + trade.pnl, 0);
@@ -148,6 +160,7 @@ export function runBacktest(input: BacktestInput): BacktestResult {
       maxDrawdownPct,
       totalFees,
       totalTaxes,
+      buyAndHoldReturnPct: firstOpen > 0 ? ((last.close - firstOpen) / firstOpen) * 100 : 0,
     },
     trades,
     equityCurve,

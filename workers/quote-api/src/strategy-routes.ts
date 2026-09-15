@@ -4,7 +4,7 @@ import { createCandleAdapter } from './env';
 import { errorMessage, errorResponse, json, type RouteContext } from './http';
 import { isYyyymmdd, shiftYyyymmdd } from './kis-candle-adapter';
 import { todayKst } from './kis-common';
-import { createStrategy, STRATEGY_IDS, validateExitRules, validateSizingRules, type StrategySpec } from './strategy';
+import { createStrategy, DEFAULT_EXIT_RULES, STRATEGY_IDS, STRATEGY_INFOS, validateExitRules, validateSizingRules, type StrategySpec } from './strategy';
 
 /** 한 번의 조회/백테스트 범위 상한. KIS 100건 페이지 × 10페이지 이내로 제한한다 */
 const MAX_RANGE_DAYS = 1000;
@@ -29,7 +29,7 @@ export async function handleCandles({ url, env, origin }: RouteContext): Promise
 }
 
 export async function handleStrategies({ origin }: RouteContext): Promise<Response> {
-  return json({ strategies: STRATEGY_IDS }, 200, origin);
+  return json({ strategies: STRATEGY_IDS, details: STRATEGY_INFOS, defaultExit: DEFAULT_EXIT_RULES }, 200, origin);
 }
 
 /**

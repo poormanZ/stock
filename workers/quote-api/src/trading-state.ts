@@ -59,7 +59,9 @@ export const TRADING_RUN_HISTORY = 50;
 const MAX_SYMBOLS = 10;
 const MIN_CANDLE_BARS = 30;
 const MAX_CANDLE_BARS = 400;
-const DEFAULT_CANDLE_BARS = 60;
+/** candleBars를 생략하면 전략 워밍업에 여유를 더해 정한다 */
+const CANDLE_BARS_MARGIN = 10;
+const MIN_DEFAULT_CANDLE_BARS = 60;
 
 function emptyState(): TradingState {
   return { status: 'STOPPED', config: null, updatedAt: new Date(0).toISOString(), runs: [] };
@@ -73,7 +75,7 @@ export function validateTradingConfig(value: unknown): TradingConfig {
   if (symbols.length === 0 || symbols.length > MAX_SYMBOLS || !symbols.every((symbol) => /^\d{6}$/.test(symbol))) throw new Error('INVALID_TRADING_SYMBOLS');
   if (!candidate.strategy || typeof candidate.strategy !== 'object' || typeof candidate.strategy.id !== 'string') throw new Error('STRATEGY_REQUIRED');
   const strategy = createStrategy(candidate.strategy);
-  const candleBars = candidate.candleBars ?? DEFAULT_CANDLE_BARS;
+  const candleBars = candidate.candleBars ?? Math.min(MAX_CANDLE_BARS, Math.max(MIN_DEFAULT_CANDLE_BARS, strategy.warmupBars + CANDLE_BARS_MARGIN));
   if (!Number.isInteger(candleBars) || candleBars < MIN_CANDLE_BARS || candleBars > MAX_CANDLE_BARS) throw new Error('INVALID_CANDLE_BARS');
   if (candleBars < strategy.warmupBars) throw new Error('CANDLE_BARS_BELOW_WARMUP');
   return {
