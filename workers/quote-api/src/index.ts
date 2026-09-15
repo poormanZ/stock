@@ -1,7 +1,7 @@
 import { handleDryRunOrder, handleDryRunReset, handleDryRunState } from './dry-run-routes';
 import type { Env } from './env';
 import { errorMessage, json, noContent, type RouteHandler } from './http';
-import { handlePaperCancel, handlePaperOrder, handlePaperReconcile } from './paper-routes';
+import { handlePaperCancel, handlePaperOrder, handlePaperPositionSync, handlePaperReconcile } from './paper-routes';
 import { handleAccount, handleBuyable, handleOrders, handleQuotes, handleReconciliation } from './query-routes';
 import { handleKillSwitch, handleRiskState } from './risk-routes';
 
@@ -20,6 +20,7 @@ const routes: Record<string, RouteHandler> = {
   'POST /dry-run/reset': handleDryRunReset,
   'POST /paper/orders': handlePaperOrder,
   'POST /paper/orders/cancel': handlePaperCancel,
+  'POST /paper/position-sync': handlePaperPositionSync,
   'POST /paper/reconcile': handlePaperReconcile,
 };
 
