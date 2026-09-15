@@ -12,7 +12,7 @@ export interface RouteContext {
 
 export type RouteHandler = (ctx: RouteContext) => Promise<Response>;
 
-export type ErrorScope = 'QUOTE' | 'ACCOUNT' | 'ACCOUNT_ASSET' | 'BUYABLE' | 'ORDERS' | 'RECONCILIATION';
+export type ErrorScope = 'QUOTE' | 'ACCOUNT' | 'ACCOUNT_ASSET' | 'BUYABLE' | 'ORDERS' | 'RECONCILIATION' | 'POSITION_SYNC';
 
 const UNAVAILABLE_CODE: Record<ErrorScope, string> = {
   QUOTE: 'QUOTE_UNAVAILABLE',
@@ -21,6 +21,7 @@ const UNAVAILABLE_CODE: Record<ErrorScope, string> = {
   BUYABLE: 'BUYABLE_UNAVAILABLE',
   ORDERS: 'ORDERS_UNAVAILABLE',
   RECONCILIATION: 'RECONCILIATION_UNAVAILABLE',
+  POSITION_SYNC: 'POSITION_SYNC_UNAVAILABLE',
 };
 
 const REJECTED_CODE: Record<KISOperation, string> = {
@@ -28,6 +29,7 @@ const REJECTED_CODE: Record<KISOperation, string> = {
   'account asset': 'KIS_ACCOUNT_ASSET_REJECTED',
   buyable: 'KIS_BUYABLE_REJECTED',
   'order history': 'KIS_ORDER_HISTORY_REJECTED',
+  'period trade profit': 'KIS_PERIOD_TRADE_PROFIT_REJECTED',
 };
 
 function corsHeaders(origin: string): Record<string, string> {
