@@ -32,6 +32,15 @@ describe('InternalStateStore', () => {
     expect((await store.get()).positions[0].quantity).toBe(2);
   });
 
+  it('syncs a broker position snapshot without deleting the order ledger', async () => {
+    const store = new InternalStateStore(stateStub());
+    await store.applyOrder(order);
+    const saved = await store.syncPositions([{ symbol: '005930', quantity: 7 }, { symbol: '000660', quantity: 3 }]);
+    expect(saved.positions).toEqual([{ symbol: '005930', quantity: 7 }, { symbol: '000660', quantity: 3 }]);
+    expect(saved.orderRecords).toEqual([order]);
+    expect(saved.orders).toEqual([expect.objectContaining({ brokerOrderId: 'broker-1' })]);
+  });
+
   it('persists orderRecords including clientOrderId for idempotency', async () => {
     const store = new InternalStateStore(stateStub());
     const saved = await store.applyOrder(order);
