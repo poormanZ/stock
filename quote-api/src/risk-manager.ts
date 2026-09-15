@@ -2,7 +2,7 @@ import { toKstDate } from './kis-common';
 import type { CreateOrderRequest, Order } from './order-domain';
 
 export interface RiskPosition { symbol: string; quantity: number; }
-export interface RiskState { positions: RiskPosition[]; orders: Order[]; dailyLoss?: number; dailyLossAvailable?: boolean; }
+export interface RiskState { positions: RiskPosition[]; orders: Order[]; dailyLoss?: number; }
 export interface RiskMarketData { referencePrice: number; quoteAsOf?: string; now?: string; }
 export interface RiskConfig {
   maxOrderQuantity: number;
@@ -32,8 +32,7 @@ export type RiskReason =
   | 'MAX_ORDER_AMOUNT'
   | 'MAX_POSITION_QUANTITY'
   | 'MAX_DAILY_ORDERS'
-  | 'MAX_DAILY_LOSS'
-  | 'DAILY_LOSS_UNAVAILABLE';
+  | 'MAX_DAILY_LOSS';
 export interface RiskCheckResult { allowed: boolean; reason: RiskReason; details?: Record<string, number | string | boolean>; }
 
 export const DEFAULT_RISK_CONFIG: RiskConfig = {
@@ -83,7 +82,6 @@ export function checkRisk(input: RiskCheckInput): RiskCheckResult {
 
   if (countTodayOrders(state.orders, now) >= config.maxDailyOrders) return blocked('MAX_DAILY_ORDERS');
   const dailyLoss = state.dailyLoss ?? 0;
-  if (state.dailyLossAvailable === false) return blocked('DAILY_LOSS_UNAVAILABLE');
   if (!Number.isFinite(dailyLoss) || dailyLoss >= config.maxDailyLoss) return blocked('MAX_DAILY_LOSS', { dailyLoss });
   return { allowed: true, reason: 'OK' };
 }

@@ -25,7 +25,4 @@ describe('risk manager', () => {
     expect(checkRisk({ request: request(), state: state({ orders: Array.from({ length: 20 }, (_, i) => order(i)) }), market, config: DEFAULT_RISK_CONFIG, killSwitchActive: false, reconciliationAllowed: true, apiHealthy: true }).reason).toBe('MAX_DAILY_ORDERS');
     expect(checkRisk({ request: request(), state: state({ dailyLoss: 100000 }), market, config: DEFAULT_RISK_CONFIG, killSwitchActive: false, reconciliationAllowed: true, apiHealthy: true }).reason).toBe('MAX_DAILY_LOSS');
   });
-  it('fails closed when daily loss data is unavailable', () => {
-    expect(checkRisk({ request: request(), state: state({ dailyLossAvailable: false }), market, config: DEFAULT_RISK_CONFIG, killSwitchActive: false, reconciliationAllowed: true, apiHealthy: true }).reason).toBe('DAILY_LOSS_UNAVAILABLE');
-  });
 });

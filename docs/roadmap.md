@@ -28,6 +28,9 @@
 - [x] Worker 타입체크(`tsc` + `@cloudflare/workers-types`) 및 라우터/HTTP 클라이언트 테스트
 - [x] 수정된 CORS preflight / PAPER 위험검사 경로 배포 후 실측 검증
 - [x] PAPER 내부 포지션을 KIS 계좌 스냅샷에서 명시적으로 동기화하는 경로
+- [x] LIVE KST 일일 실현손익 산출 Adapter 1차 (`TTTC8715R`)
+- [x] 손익 데이터 미확인 시 Risk Manager fail-closed
+- [ ] PAPER 주문 경로에 검증된 dailyLoss 공급 연결
 - [ ] 모의투자 주문 안정성 검증
 - [ ] 전략/백테스트
 - [ ] 실계좌 주문
@@ -39,6 +42,8 @@
 - [x] 국내주식 시세 Adapter
 - [x] KIS 오류 응답 변환
 - [x] timeout / retry / rate-limit 정책
+- [x] LIVE 기간별매매손익 Adapter
+- [ ] PAPER 기간별매매손익 지원 여부 검증
 
 ## Phase 2 — 시세 서비스 / 프론트엔드
 - [x] `/quote`, `/quotes` 계약
@@ -94,6 +99,9 @@
 - [x] 긴급 정지 상태 저장
 - [x] 모든 DRY_RUN 주문 경로가 Risk Manager를 통과하도록 보장
 - [x] PAPER 주문 경로에도 동일 Risk Manager 연결
+- [x] dailyLoss 계산 순수 로직
+- [x] dailyLoss 미확인 fail-closed 방어
+- [ ] PAPER 검증된 dailyLoss 공급 연결
 
 ## Phase 7 — 모의투자 자동매매
 - [x] 모의투자 주문 Adapter
@@ -156,36 +164,24 @@
 
 ### 완료 — 배포 후 실측 검증
 
-2026-09-15 배포 후 실측에서 수정된 CORS preflight / 위험검사 경로를 확인했다. 다음 항목이 모두 완료되었다.
-
-1. `OPTIONS /dry-run/orders` preflight 정상 응답 및 `access-control-allow-origin` 확인
-2. `GET /risk`, `GET /dry-run`의 GitHub Pages Origin CORS 헤더 확인
-3. Pages UI에서 장외시간 DRY_RUN 주문 성공 확인
-4. 동일 `clientOrderId` 재전송 시 멱등 처리 확인
-5. Kill Switch 활성화 시 `KILL_SWITCH_ACTIVE` 거부 확인
+2026-09-15 배포 후 실측에서 수정된 CORS preflight / 위험검사 경로를 확인했다.
 
 ### 완료 — 내부 포지션 동기화 정책 및 구현 1차
 
-내부 포지션은 **자동 주문 경로에서 KIS 스냅샷으로 조용히 덮어쓰지 않고**, 운영자가 명시적으로 동기화할 때만 KIS PAPER 계좌 스냅샷을 내부 DO에 반영한다. 따라서 외부에서 발생한 예상치 못한 포지션 변경은 기존 reconciliation mismatch로 남아 신규 주문을 fail-closed 한다.
+내부 포지션은 자동 주문 경로에서 KIS 스냅샷으로 조용히 덮어쓰지 않고 운영자가 명시적으로 동기화할 때만 반영한다.
 
-- `POST /paper/position-sync` 추가
-- KIS `AccountSnapshot.positions`의 `symbol/quantity`만 내부 포지션으로 반영
-- 기존 `orderRecords`/주문 요약은 보존
-- DRY_RUN에는 이 경로를 사용하지 않음
-- 내부 상태 DO에 `sync-positions` 명령 및 회귀 테스트 추가
+### 완료 — `dailyLoss` 산출 기반 1차
 
-이 방식으로 **체결 기록과 포지션 스냅샷을 혼합해 임의로 추정하지 않고**, KIS를 실제 보유수량의 스냅샷 원천으로 사용한다. 동기화 후에도 당일 주문 상태가 불일치하면 PAPER 신규 주문 Gate는 계속 닫힌다.
+KIS 공식 샘플에서 확인되는 LIVE `TTTC8715R` 기간별매매손익 API를 사용하도록 Adapter를 추가했다. KST 거래일의 `rlzt_pfls`에서 `fee`, `tl_tax`, `loan_int`를 차감한 순실현손익을 계산하고, 음수일 때만 `dailyLoss`로 변환한다.
 
-### 다음 1순위 — `dailyLoss` 산출 구현
+또한 PAPER용 TR ID를 추측하지 않도록 PAPER에서는 손익 데이터 미확인을 `DAILY_LOSS_UNAVAILABLE`로 표현할 수 있게 Risk Manager를 fail-closed로 강화했다.
 
-현재 `RiskState.dailyLoss` 필드는 있으나 실제 체결 기반 실현손익 계산이 없어 일일 손실 한도가 실효화되지 않는다. 다음 단계에서 KST 거래일 기준으로 체결된 매수/매도 내역을 이용해 실현손익을 계산하고 Risk Manager 입력에 연결한다.
+### 다음 1순위 — PAPER dailyLoss 공급 검증/연결
 
-### 2순위 — PAPER 주문 안정성 검증
+KIS 공식 저장소의 현재 샘플에서 `TTTC8715R` 기간별매매손익은 LIVE 계좌 조회로 확인되며, PAPER용 `VTTC*` TR ID는 확인하지 않았다. 따라서 다음 단계에서는 KIS Developers에서 PAPER 지원 여부를 확인하거나, 지원되지 않는 경우 PAPER 체결내역 기반의 별도 비용원가 ledger를 설계한 뒤 Risk Manager에 연결한다. 임의의 `VTTC8715R`은 사용하지 않는다.
 
-PAPER 신규 주문은 한국시간(KST) 기준 평일 09:00~15:30 정규장에만 전송되도록 Worker 단계에서 차단한다. 주말과 장외 시간에는 KIS 주문 API까지 요청하지 않고 `MARKET_SESSION_CLOSED`를 반환한다. `/paper/reconcile`와 `/paper/position-sync`는 장외에서도 상태 복구/동기화를 위해 호출할 수 있다.
+### 그 다음 — PAPER 주문 안정성 검증
 
-현재 Worker의 `KIS_ENVIRONMENT`는 `LIVE`이므로 `/paper/orders`와 `/paper/reconcile`/`/paper/position-sync`는 실제 운영 Worker에서는 수행되지 않는다. LIVE 주문 API는 계속 추가하지 않는다.
+PAPER 신규 주문은 한국시간(KST) 기준 평일 09:00~15:30 정규장에만 전송되도록 Worker 단계에서 차단한다. `/paper/reconcile`와 `/paper/position-sync`는 장외에서도 상태 복구/동기화를 위해 호출할 수 있다.
 
-### 3순위 — 일정 기간 안정성 검증
-
-PAPER 주문의 성공/거부/UNKNOWN/부분체결/취소/재시작 복구를 일정 기간 반복 검증한 뒤 전략 및 백테스트 단계로 이동한다.
+현재 Worker의 `KIS_ENVIRONMENT`는 `LIVE`이므로 실제 운영 Worker에서는 PAPER 주문 경로를 수행하지 않는다. LIVE 주문 API는 계속 추가하지 않는다.

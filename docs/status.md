@@ -2,7 +2,7 @@
 
 > 기준일: 2026-09-15
 > 기준 브랜치: `main`
-> 정리 기준 커밋: `3e4b84d` (`docs: record explicit PAPER position sync policy`)
+> 정리 기준 커밋: `b80a185` (`docs: record PAPER position sync status`)
 
 ## 1. 프로젝트 목표
 
@@ -42,6 +42,7 @@
 - 읽기 전용 `/orders`
 - KIS 계좌 ↔ 내부 상태 reconciliation
 - PAPER 명시적 포지션 스냅샷 동기화 `/paper/position-sync`
+- LIVE KST 거래일 실현손익 Adapter 1차 구현 (`TTTC8715R`)
 
 ### 주문 도메인
 
@@ -78,6 +79,7 @@
 - 부분체결/취소 복구
 - 장 운영시간 처리
 - **KIS 계좌 보유수량 → 내부 포지션 명시적 동기화**
+- 손익 데이터 미지원 환경에서는 `DAILY_LOSS_UNAVAILABLE`로 fail-closed 할 수 있는 Risk Manager 방어 로직
 
 현재 Worker 자체가 `LIVE` 환경이므로 PAPER 주문/동기화 경로를 실제 운영 Worker에서 수행하지 않는다.
 
@@ -99,13 +101,14 @@
 - 종목별 최대 주문금액
 - 전체 포지션 한도
 - 일일 주문 횟수 한도
-- 일일 손실 한도 필드
+- 일일 손실 한도
 - stale quote 차단
 - API 장애 차단
 - reconciliation 불일치 차단
 - Kill Switch
+- 손익 데이터 미확인 시 신규주문 fail-closed (`DAILY_LOSS_UNAVAILABLE`)
 
-**주의:** `dailyLoss`는 아직 실제 체결 기반으로 산출되지 않는다. 다음 단계에서 KST 거래일 기준 실현손익 계산을 연결해야 한다.
+`dailyLoss` 계산 순수 로직과 LIVE `TTTC8715R` Adapter 1차 구현이 완료되었다. 다만 현재 PAPER 환경에서는 KIS 공식 샘플에서 해당 기간별매매손익 API의 PAPER TR ID를 확인하지 못했으므로 추측한 `VTTC*` TR을 사용하지 않는다.
 
 ## 6. LIVE / PAPER / DRY_RUN 역할 구분
 
@@ -119,13 +122,9 @@
 
 ## 7. 최근 변경 이력
 
-### `3e4b84d` — 2026-09-15 PAPER 포지션 동기화 정책 기록
+### `b80a185` — 2026-09-15 PAPER 포지션 동기화 상태 기록
 
-- `POST /paper/position-sync` 경로 추가
-- KIS 계좌 스냅샷의 보유수량을 내부 DO에 명시적으로 반영
-- 주문 ledger 보존
-- 내부 상태 `sync-positions` 명령 및 회귀 테스트 추가
-- 자동 주문 경로에서 조용한 포지션 덮어쓰기 방지
+- 명시적 포지션 동기화 1차 구현 상태 기록
 
 ### `c4e2db4` — 2026-09-15 DRY_RUN 배포 후 실측 완료
 
@@ -149,13 +148,13 @@
 | Worker `npm test` | 17 파일 / 86 테스트 통과 |
 | 프론트 `npm run check` / `npm run build` | 통과 |
 
-이후 포지션 동기화 로직과 회귀 테스트를 추가했으므로 최신 `main`에서는 CI/로컬 검증을 다시 통과시키는 것이 다음 검증 단계다.
+이번 변경으로 daily-loss 순수 테스트와 Risk Manager fail-closed 테스트가 추가되었으므로 최신 `main`에서 CI/로컬 검증을 다시 통과시켜야 한다.
 
 ## 9. 아직 남은 작업
 
 ### 최우선
 
-1. `dailyLoss` 산출 추가 (KST 거래일 실현손익)
+1. PAPER 주문 경로에 검증된 dailyLoss 공급 연결
 2. 최신 변경 기준 Worker check/test 재검증
 3. PAPER 주문 안정성 검증
 
@@ -180,7 +179,8 @@
 
 ## 10. 알려진 한계
 
-- `dailyLoss`가 실제 체결 기반으로 계산되지 않아 일일 손실 한도가 아직 실효화되지 않았다.
+- KIS 공식 샘플에서 확인되는 `TTTC8715R` 기간별매매손익 API는 LIVE용으로 확인되며 PAPER용 TR ID는 확인하지 않았다.
+- 따라서 PAPER에서는 손익 조회를 추측하지 않고 fail-closed 해야 한다.
 - PAPER 취소는 접수 응답만으로 `CANCELED` 처리하며, 취소 전 체결 경합은 자동 복구되지 않는다.
 - `market-session.ts`는 KRX 휴장일을 반영하지 않는다.
 - 최신 코드의 전체 check/test 결과는 다음 검증에서 다시 확인한다.

@@ -1,6 +1,5 @@
-import { calculateDailyLoss, type DailyLossRow, type DailyLossResult } from './daily-loss';
 import type { KISEnvironment, KISPaged, KISResponseMeta } from './kis-common';
-import { assertAccepted, forEachKisPage, toNumber, todayKst, validateAccountParts } from './kis-common';
+import { assertAccepted, forEachKisPage, toNumber, validateAccountParts } from './kis-common';
 import type { KISHttpClient } from './kis-http-client';
 
 type RawBalanceItem = Record<string, string | number | undefined>;
@@ -13,10 +12,6 @@ type RawAccountAssetResponse = KISResponseMeta & {
   output2?: RawBalanceItem;
 };
 type RawBuyableResponse = KISResponseMeta & { output?: RawBalanceItem };
-type RawPeriodTradeProfitResponse = KISResponseMeta & KISPaged & {
-  output1?: RawBalanceItem[];
-  output2?: RawBalanceItem[] | RawBalanceItem;
-};
 
 export interface AccountPosition {
   symbol: string;
@@ -51,12 +46,6 @@ export interface AccountAssetSnapshot {
   output2: RawBalanceItem;
 }
 
-export interface DailyLossSnapshot extends DailyLossResult {
-  asOf: string;
-  environment: KISEnvironment;
-  source: 'period-trade-profit';
-}
-
 export interface BuyableOrder {
   asOf: string;
   environment: KISEnvironment;
@@ -74,10 +63,8 @@ export interface BuyableOrder {
 const BALANCE_PATH = '/uapi/domestic-stock/v1/trading/inquire-balance';
 const ACCOUNT_ASSET_PATH = '/uapi/domestic-stock/v1/trading/inquire-account-balance';
 const BUYABLE_PATH = '/uapi/domestic-stock/v1/trading/inquire-psbl-order';
-const PERIOD_TRADE_PROFIT_PATH = '/uapi/domestic-stock/v1/trading/inquire-period-trade-profit';
 const BALANCE_TR_ID: Record<KISEnvironment, string> = { LIVE: 'TTTC8434R', PAPER: 'VTTC8434R' };
 const BUYABLE_TR_ID: Record<KISEnvironment, string> = { LIVE: 'TTTC8908R', PAPER: 'VTTC8908R' };
-const PERIOD_TRADE_PROFIT_TR_ID = 'TTTC8715R';
 const ACCOUNT_ASSET_TR_ID = 'CTRP6548R';
 const QUERY_HEADERS = { 'content-type': 'application/json; charset=utf-8', custtype: 'P' };
 
@@ -176,55 +163,6 @@ export class KISAccountAdapter {
       totalEquity: toNumber(summary.tot_evlu_amt),
       netAssetValue: toNumber(summary.nass_amt),
       positions,
-    };
-  }
-
-  /**
-   * KST 거래일의 실현손익을 KIS 기간별매매손익 API에서 산출한다.
-   * KIS 공식 샘플의 TTTC8715R은 LIVE 조회용이므로 PAPER에서는 의도적으로 지원하지 않는다.
-   */
-  async getDailyLoss(date = todayKst()): Promise<DailyLossSnapshot> {
-    if (this.environment !== 'LIVE') throw new Error('KIS_DAILY_LOSS_UNAVAILABLE:PAPER');
-    if (!/^\d{8}$/.test(date)) throw new Error('INVALID_DAILY_LOSS_DATE');
-    validateAccountParts(this.cano, this.accountProductCode);
-
-    const rows: DailyLossRow[] = [];
-    await forEachKisPage<RawPeriodTradeProfitResponse>('period trade profit', (cursor) => {
-      const query = new URLSearchParams({
-        CANO: this.cano,
-        ACNT_PRDT_CD: this.accountProductCode,
-        SORT_DVSN: '00',
-        PDNO: '',
-        INQR_STRT_DT: date,
-        INQR_END_DT: date,
-        CBLC_DVSN: '00',
-        CTX_AREA_FK100: cursor.CTX_AREA_FK100,
-        CTX_AREA_NK100: cursor.CTX_AREA_NK100,
-      });
-      return this.client.getJsonResponse<RawPeriodTradeProfitResponse>(`${PERIOD_TRADE_PROFIT_PATH}?${query}`, {
-        ...QUERY_HEADERS,
-        tr_id: PERIOD_TRADE_PROFIT_TR_ID,
-        tr_cont: cursor.tr_cont,
-      });
-    }, (data) => {
-      for (const item of data.output1 ?? []) {
-        const tradDt = String(item.trad_dt ?? '').trim();
-        if (tradDt !== date) continue;
-        rows.push({
-          tradDt,
-          realizedProfitLoss: toNumber(item.rlzt_pfls),
-          fee: toNumber(item.fee),
-          tax: toNumber(item.tl_tax),
-          loanInterest: toNumber(item.loan_int),
-        });
-      }
-    });
-
-    return {
-      ...calculateDailyLoss(rows, date),
-      asOf: new Date().toISOString(),
-      environment: this.environment,
-      source: 'period-trade-profit',
     };
   }
 

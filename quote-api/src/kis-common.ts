@@ -9,7 +9,7 @@ export interface KISResponseMeta {
   msg1?: string;
 }
 
-export type KISOperation = 'balance' | 'account asset' | 'buyable' | 'order history' | 'period trade profit';
+export type KISOperation = 'balance' | 'account asset' | 'buyable' | 'order history';
 
 export const LIVE_BASE_URL = 'https://openapi.koreainvestment.com:9443';
 export const PAPER_BASE_URL = 'https://openapivts.koreainvestment.com:29443';
