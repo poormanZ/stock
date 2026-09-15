@@ -31,9 +31,12 @@
 - [x] LIVE KST 일일 실현손익 산출 Adapter 1차 (`TTTC8715R`)
 - [x] 손익 데이터 미확인 시 Risk Manager fail-closed
 - [ ] PAPER 주문 경로에 검증된 dailyLoss 공급 연결
-- [ ] 모의투자 주문 안정성 검증
-- [ ] 전략/백테스트
-- [ ] 실계좌 주문
+- [x] 전략 인터페이스 / SMA 교차 전략 / 손절·익절 / 포지션 사이징 / 일봉 백테스트
+- [x] 자동 실행 스케줄러(Cron, DO lease, 실행 이력, ERROR/EMERGENCY_STOP 전이)
+- [x] 감사 로그 / webhook 알림 / 체결 증분 포지션 원장 / PAPER 일일 실현손실
+- [x] 실계좌 주문 게이트(기본 비활성, 명시적 arm + 확인 문구) 및 LIVE 어댑터
+- [ ] 모의투자 주문 안정성 검증 (기간 필요)
+- [ ] 실계좌 주문 활성화 (PAPER 검증 후 운영자 결정. `docs/operations.md` §8 체크리스트)
 
 ## Phase 1 — KIS 인증/어댑터
 - [x] `PAPER` / `LIVE` 환경 분리
@@ -114,51 +117,55 @@
 - [ ] 일정 기간 안정성 검증
 
 ## Phase 8 — 전략 / 백테스트
-- [ ] Strategy 인터페이스
-- [ ] 진입/청산 조건
-- [ ] 포지션 사이징
-- [ ] 손절/익절 규칙
-- [ ] 과거 데이터 백테스트
-- [ ] 수수료/세금/슬리피지 반영
-- [ ] 수익률/승률/최대낙폭/손익비 지표
+- [x] Strategy 인터페이스 (`strategy.ts`, 순수 함수)
+- [x] 진입/청산 조건 (SMA 교차 전략)
+- [x] 포지션 사이징 (현금 비율·주문금액·수량·포지션 한도)
+- [x] 손절/익절 규칙
+- [x] 과거 데이터 백테스트 (KIS 일봉 `GET /candles`, `POST /backtest`)
+- [x] 수수료/세금/슬리피지 반영 (DRY_RUN 비용 모델 공유)
+- [x] 수익률/승률/최대낙폭/손익비 지표
+- [ ] 추가 전략 (모멘텀, 변동성 돌파 등)
 
 ## Phase 9 — 자동 실행 스케줄러
-- [ ] 실행 주기/트리거
-- [ ] 중복 실행 방지/Lock
-- [ ] 실행 이력
-- [ ] 장애 후 재개
-- [ ] 장 시작/종료 처리
-- [ ] 장외 신규주문 차단
+- [x] 실행 주기/트리거 (Cron `*/5 0-6 * * 1-5`, `POST /trading/run` 수동)
+- [x] 중복 실행 방지/Lock (DO lease 120초)
+- [x] 실행 이력 (`GET /trading/runs`, 50건)
+- [x] 장애 후 재개 (lease 만료, ERROR 상태 → 운영자 start)
+- [x] 장 시작/종료 처리 (PAPER는 정규장만 실행)
+- [x] 장외 신규주문 차단 (PAPER 경로 MARKET_SESSION_CLOSED)
+- [ ] 운영 환경에서 Cron 실행 실측
 
 ## Phase 10 — 실계좌 매매 게이트
-- [ ] 기본값 `LIVE` 금지
-- [ ] 명시적 `LIVE_TRADING_ENABLED` 확인
-- [ ] 계좌 환경 일치 확인
-- [ ] Risk Manager / Kill Switch 확인
-- [ ] 장 상태 확인
-- [ ] 주문 한도 확인
-- [ ] 사용자 명시적 활성화 절차
-- [ ] 모의투자 안정성 검증 후에만 활성화
+- [x] 기본값 `LIVE` 금지 (플래그 미설정 시 403 `LIVE_TRADING_DISABLED`, KIS 호출 없음)
+- [x] 명시적 `LIVE_TRADING_ENABLED` 확인 (정확히 `true`)
+- [x] 계좌 환경 일치 확인 (`KIS_ENVIRONMENT=LIVE`, 계좌 설정)
+- [x] Risk Manager / Kill Switch 확인
+- [x] 장 상태 확인
+- [x] 주문 한도 확인 (Risk Manager 공유, LIVE 일일손실은 KIS 기간별매매손익)
+- [x] 사용자 명시적 활성화 절차 (`POST /live/arm` 확인 문구 + 15분 TTL, 주문마다 확인 문구)
+- [x] 모의투자 안정성 검증 후에만 활성화 (`PAPER_VERIFICATION_DATE` 필수)
+- [ ] 운영자 체크리스트 완료 후 실제 활성화 (`docs/operations.md` §8)
 
 ## Phase 11 — 모니터링 / 감사 / 복구
-- [ ] 주문/전략/Risk/KIS 오류/체결 감사 로그
-- [ ] 계좌 reconciliation 로그
-- [ ] 민감정보 마스킹
-- [ ] 장애 알림
-- [ ] 재시작 복구
+- [x] 주문/전략/Risk/KIS 오류/체결 감사 로그 (`GET /audit`, 500건)
+- [x] 계좌 reconciliation 로그
+- [x] 민감정보 마스킹 (인증정보·8자리 계좌번호)
+- [x] 장애 알림 (`ALERT_WEBHOOK_URL`)
+- [x] 재시작 복구 (DO 영속 상태, lease 만료, 재시작 복구 테스트)
 - [x] UNKNOWN 주문을 `/paper/reconcile`에서 RECONCILING 경유로 복구 (수동 호출)
-- [ ] UNKNOWN 주문 자동 reconciliation (스케줄 트리거)
+- [x] UNKNOWN 주문 자동 reconciliation (PAPER 스케줄 사이클 시작 시 resync)
 
 ## Phase 12 — 품질 / 운영 안정화
 - [x] 순수 로직 단위 테스트 (상태 머신, Risk Manager, reconciliation, 시뮬레이터, 어댑터 계약, 라우터)
-- [ ] 실제 KIS PAPER 환경 통합 테스트
+- [x] 실제 KIS PAPER 환경 통합 테스트 골격 (`npm run test:integration`, 환경변수 있을 때만 실행, 읽기 전용)
+- [ ] 실제 KIS PAPER 환경 통합 테스트 실행
 - [x] KIS 5xx/429/인증 실패 처리 테스트 (HTTP 클라이언트)
 - [x] token 만료 해석(KST)·재발급 테스트
 - [x] 중복 주문(POST 비재시도, clientOrderId 멱등성)/부분체결 resync 테스트
-- [ ] 재시작/잔고 불일치 테스트
+- [x] 재시작/잔고 불일치 테스트 (DO 재생성 복구, `/reconciliation` KIS stub 불일치)
 - [x] 빌드/배포 자동 검증 (Worker: check → test → deploy, Pages: test → build)
-- [ ] 보안 점검
-- [ ] 운영 매뉴얼 및 실거래 전 체크리스트
+- [ ] 보안 점검 (외부 감사)
+- [x] 운영 매뉴얼 및 실거래 전 체크리스트 (`docs/operations.md`)
 
 ## 현재 다음 작업
 
@@ -176,12 +183,18 @@ KIS 공식 샘플에서 확인되는 LIVE `TTTC8715R` 기간별매매손익 API�
 
 또한 PAPER용 TR ID를 추측하지 않도록 PAPER에서는 손익 데이터 미확인을 `DAILY_LOSS_UNAVAILABLE`로 표현할 수 있게 Risk Manager를 fail-closed로 강화했다.
 
-### 다음 1순위 — PAPER dailyLoss 공급 검증/연결
+### 완료 — PAPER dailyLoss 공급 연결
 
-KIS 공식 저장소의 현재 샘플에서 `TTTC8715R` 기간별매매손익은 LIVE 계좌 조회로 확인되며, PAPER용 `VTTC*` TR ID는 확인하지 않았다. 따라서 다음 단계에서는 KIS Developers에서 PAPER 지원 여부를 확인하거나, 지원되지 않는 경우 PAPER 체결내역 기반의 별도 비용원가 ledger를 설계한 뒤 Risk Manager에 연결한다. 임의의 `VTTC8715R`은 사용하지 않는다.
+PAPER는 KIS 기간별매매손익 조회를 제공하지 않으므로 체결 증분 기반 원장(`position-ledger.ts`)으로 당일 실현손익을 계산해 Risk Manager에 공급한다. `/paper/reconcile`(또는 스케줄러 resync)에서 체결이 확정될 때 포지션·평균단가·실현손익이 갱신되고, 기준선은 `POST /paper/position-sync`(평균단가 포함)로 만든다. LIVE는 `TTTC8715R`을 그대로 사용하며, 어느 공급원도 없으면 `DAILY_LOSS_UNAVAILABLE`로 차단한다(fail-closed).
 
-### 그 다음 — PAPER 주문 안정성 검증
+### 다음 1순위 — 배포 후 실측 (스케줄러·감사 로그·CANCEL_PENDING)
+
+push → `v5` 마이그레이션(AuditLogStoreDO, TradingStateStoreDO) 적용 확인 → `GET /trading/status`, `GET /live/status`(=`LIVE_TRADING_DISABLED`), `GET /audit` 확인 → Pages UI에서 DRY_RUN 자동매매 시작 → 5분 Cron 실행 이력·감사 로그를 며칠 관찰한다.
+
+### 2순위 — PAPER 주문 안정성 검증 (Phase 7)
 
 PAPER 신규 주문은 한국시간(KST) 기준 평일 09:00~15:30 정규장에만 전송되도록 Worker 단계에서 차단한다. `/paper/reconcile`와 `/paper/position-sync`는 장외에서도 상태 복구/동기화를 위해 호출할 수 있다.
 
 현재 Worker의 `KIS_ENVIRONMENT`는 `LIVE`이므로 실제 운영 Worker에서는 PAPER 주문 경로를 수행하지 않는다. LIVE 주문 API는 계속 추가하지 않는다.
+
+통과 기준과 실계좌 활성화 절차는 `docs/operations.md` §8 체크리스트를 따른다. 실계좌 활성화는 코드 변경 없이 Secret(`LIVE_TRADING_ENABLED`, `PAPER_VERIFICATION_DATE`)으로만 제어하며 운영자 결정 사항이다.

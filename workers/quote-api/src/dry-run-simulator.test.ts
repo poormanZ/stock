@@ -72,3 +72,12 @@ describe('DryRunStateStoreDO', () => {
     expect(await reset.json()).toEqual({ error: 'INVALID_DRY_RUN_CASH' });
   });
 });
+
+describe('dry-run realized pnl', () => {
+  it('tracks the day loss from sells so the daily loss limit can apply', () => {
+    const state = createDryRunState(1_000_000);
+    simulateOrder(state, buy, 50_000, 10, { feeBps: 0, sellTaxBps: 0, slippageBps: 0 });
+    simulateOrder(state, { ...buy, id: 'o2', clientOrderId: 'c2', side: 'sell' }, 45_000, 10, { feeBps: 0, sellTaxBps: 0, slippageBps: 0 });
+    expect(state.realized?.pnl).toBe(-50_000);
+  });
+});

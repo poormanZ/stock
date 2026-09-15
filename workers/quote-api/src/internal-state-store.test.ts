@@ -81,3 +81,35 @@ describe('InternalStateStore', () => {
     expect(saved.orderRecords?.[0].status).toBe('FILLED');
   });
 });
+
+describe('InternalStateStore ledger and restart recovery', () => {
+  it('updates positions and realized pnl from fill deltas applied through order records', async () => {
+    const store = new InternalStateStore(stateStub());
+    await store.applyOrder({ ...order, status: 'ACCEPTED', executedQuantity: 0 });
+    const filled = await store.applyOrder({ ...order, status: 'FILLED', executedQuantity: 1, averageExecutedPrice: 70000, updatedAt: '2026-09-14T12:00:02.000Z' });
+    expect(filled.positions).toEqual([{ symbol: '005930', quantity: 1, averagePrice: 70000 }]);
+
+    const sell: Order = { ...order, id: 'order-2', clientOrderId: 'client-2', brokerOrderId: 'broker-2', side: 'sell', status: 'FILLED', executedQuantity: 1, averageExecutedPrice: 69000 };
+    const sold = await store.applyOrder(sell);
+    expect(sold.positions).toEqual([]);
+    expect(sold.realized?.pnl).toBe(-1000);
+    expect((await store.applyOrder(sell)).realized?.pnl).toBe(-1000);
+  });
+
+  it('keeps average prices from KIS snapshots and drops zero-quantity rows', async () => {
+    const store = new InternalStateStore(stateStub());
+    await store.applyOrder(order);
+    const synced = await store.syncPositions([{ symbol: '000660', quantity: 3, averagePrice: 120000 }, { symbol: '005930', quantity: 0, averagePrice: 0 }]);
+    expect(synced.positions).toEqual([{ symbol: '000660', quantity: 3, averagePrice: 120000 }]);
+    expect(synced.orderRecords).toHaveLength(1);
+  });
+
+  it('recovers persisted state when a new store instance starts over the same storage', async () => {
+    const shared = stateStub();
+    await new InternalStateStore(shared).applyOrder({ ...order, status: 'FILLED', executedQuantity: 1, averageExecutedPrice: 70000 });
+    const restarted = new InternalStateStore(shared);
+    const state = await restarted.get();
+    expect(state.orderRecords?.[0].status).toBe('FILLED');
+    expect(state.positions[0]).toMatchObject({ symbol: '005930', quantity: 1 });
+  });
+});

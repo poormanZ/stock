@@ -1,7 +1,15 @@
 import { assertOrderRequest, createOrder, isValidOrderRequest, type CreateOrderRequest, type Order } from './order-domain';
+import { addRealized, type LedgerPosition, type RealizedPnl } from './position-ledger';
 
-export interface DryRunPosition { symbol: string; quantity: number; averagePrice: number; }
-export interface DryRunState { cash: number; positions: DryRunPosition[]; orders: Order[]; updatedAt: string; }
+export type DryRunPosition = LedgerPosition;
+export interface DryRunState {
+  cash: number;
+  positions: DryRunPosition[];
+  orders: Order[];
+  updatedAt: string;
+  /** 당일 실현손익(수수료·세금 차감). Risk Manager의 일일 손실 한도에 사용 */
+  realized?: RealizedPnl;
+}
 export interface DryRunConfig { feeBps: number; sellTaxBps: number; slippageBps: number; }
 export interface DryRunExecution {
   order: Order;
@@ -84,6 +92,7 @@ export function simulateOrder(
     const remaining = existing.quantity - executedQuantity;
     state.positions = remaining > 0 ? [...others, { ...existing, quantity: remaining }] : others;
     state.cash = roundMoney(state.cash + grossAmount - fee - tax);
+    state.realized = addRealized(state, grossAmount - fee - tax - existing.averagePrice * executedQuantity, new Date()).realized;
   }
 
   const now = new Date().toISOString();

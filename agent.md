@@ -91,7 +91,8 @@
 - `docs/design.md`: 시스템 구조, 모듈 배치, Worker 엔드포인트 계약, 데이터 모델, 설계 결정을 관리한다. Secret 값은 기록하지 않는다.
 - `docs/quote-contract.md`: 시세 API 응답 계약과 stale/missing 정책을 관리한다.
 - `docs/api-strategy.md`: 데이터 공급자 선정 근거를 관리한다.
-- 전략·리스크 규칙(`docs/trading.md`)과 운영 절차(`docs/operations.md`)는 해당 기능이 구현될 때 추가한다. 존재하지 않는 문서를 참조하지 않는다.
+- `docs/trading.md`: 전략 인터페이스, 구현 전략, 손절/익절, 사이징, 주문·Risk 규칙을 관리한다.
+- `docs/operations.md`: 환경변수, 배포, 로컬 실행, 자동매매 운영, 장애 대응, 긴급 정지, 실계좌 활성화 체크리스트를 관리한다.
 - 기능을 변경하면 관련 문서도 함께 갱신한다.
 - 로드맵의 완료 표시는 실제 코드·검증 결과가 있는 경우에만 변경한다.
 

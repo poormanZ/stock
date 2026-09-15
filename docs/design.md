@@ -1,6 +1,6 @@
 # 한국투자증권 자동 주식매매 시스템 설계 문서
 
-> 기준일: 2026-09-15
+> 기준일: 2026-09-15 (미커밋 작업 포함)
 
 ## 1. 목적
 
@@ -81,6 +81,20 @@ workers/quote-api/src/
   dry-run-simulator.ts       simulateOrder, DryRunStateStoreDO
   internal-state-store.ts    InternalStateStoreDO
   market-session.ts          KST 정규장(09:00~15:30, 평일) 판정. 휴장일 미반영
+  position-ledger.ts         체결 증분 → 포지션·평균단가·당일 실현손익 (순수)
+  daily-loss.ts              KIS 기간별매매손익(LIVE) 집계 (순수)
+  strategy.ts                Strategy 인터페이스, SMA 교차 전략, 손절/익절, 포지션 사이징 (순수)
+  backtest.ts                일봉 백테스트 (DRY_RUN 비용 모델 공유)
+  kis-candle-adapter.ts      일봉(FHKST03010100) → Candle[]
+  strategy-routes.ts         /candles /strategies /backtest
+  trading-state.ts           TradingStateStoreDO (설정·상태·lease·실행 이력)
+  trading-engine.ts          Cron 사이클 (TradingDeps 주입)
+  trading-routes.ts          /trading/*
+  kis-cash-order-adapter.ts  현금주문 공통 (PAPER/LIVE TR 매핑). paper/live 어댑터의 부모
+  live-trading-gate.ts       실계좌 게이트 (순수)
+  live-routes.ts             /live/*
+  audit-log.ts / audit-routes.ts  AuditLogStoreDO, /audit
+  alerts.ts                  ALERT_WEBHOOK_URL 알림
   quote-contract.ts          종목코드/개수 검증
   kis-security.ts            민감정보 마스킹
 ```
@@ -110,6 +124,16 @@ workers/quote-api/src/
 | POST | `/paper/orders` | PAPER 환경, 계좌 설정, 정규장 | `{ order, messageCode, message }` / 멱등 `{ idempotent: true, order }` |
 | POST | `/paper/orders/cancel` | PAPER 환경, 계좌 설정, 정규장, `{ id \| clientOrderId }` | `{ order, messageCode, message }` |
 | POST | `/paper/reconcile` | PAPER 환경, 계좌 설정 (장외 허용) | `{ account, updated, unresolved[], orders[] }` |
+| POST | `/paper/position-sync` | PAPER 환경, 계좌 설정 (장외 허용) | KIS 포지션(평균단가 포함)을 내부 기준선으로 채택 |
+| GET | `/candles?symbol=&startDate=&endDate=` | 최대 1,000일 | `{ candles: Candle[] }` (일봉, 오래된 순) |
+| GET | `/strategies` | — | `{ strategies: string[] }` |
+| POST | `/backtest` | `{ symbol, startDate?, endDate?, strategy, initialCash?, exit?, sizing? }` | 지표·거래·자산곡선. `disclaimer` 포함 |
+| GET | `/trading/status` / `/trading/runs?limit=` | — | `TradingState` / 실행 이력 |
+| POST | `/trading/configure` / `/trading/start` / `/trading/stop` / `/trading/run` | `config`(mode DRY_RUN\|PAPER, symbols≤10, strategy, exit, sizing, candleBars) | `TradingState` / 사이클 결과 |
+| GET | `/audit?limit=&type=` | — | `{ count, events[] }` (최신순) |
+| GET | `/live/status` | — | 게이트 `checks`와 `reason` |
+| POST | `/live/arm` / `/live/disarm` | `LIVE_TRADING_ENABLED='true'`, `{ confirmation, ttlSeconds≤900, reason }` | 실계좌 arm 상태 |
+| POST | `/live/orders` / `/live/orders/cancel` | 게이트 전부 통과 + `confirmation` | PAPER와 동일 계약(`LIVE_*` 코드) |
 
 공통 규칙:
 
@@ -128,6 +152,10 @@ workers/quote-api/src/
 | `INVALID_ORDER`, `INVALID_REFERENCE_PRICE`, `INVALID_*_REQUEST` | 400 | 요청 검증 실패 |
 | `KILL_SWITCH_ACTIVE`, `MAX_*`, `STALE_QUOTE`, `RECONCILIATION_MISMATCH` 등 `RiskReason` | 409 | Risk Manager / Gate 차단. 본문에 `risk` 포함 |
 | `PAPER_ENVIRONMENT_REQUIRED`, `MARKET_SESSION_CLOSED` | 409 | PAPER 선행 조건 미충족 |
+| `LIVE_TRADING_DISABLED` | 403 | 실계좌 게이트 기본 비활성. KIS 호출 없음 |
+| `PAPER_VERIFICATION_REQUIRED`, `LIVE_TRADING_NOT_ARMED`, `LIVE_CONFIRMATION_REQUIRED` 등 `LiveGateReason` | 409 | 실계좌 게이트 차단. 본문에 `gate.checks` |
+| `DAILY_LOSS_UNAVAILABLE` | 409 | 당일 손익 공급원 없음 (fail-closed) |
+| `TRADING_NOT_CONFIGURED`, `TRADING_RUNNING`, `EMERGENCY_STOP_ACTIVE`, `INVALID_TRADING_CONFIG` | 409/400 | 자동매매 제어 |
 | `PAPER_ORDER_REJECTED`, `PAPER_ORDER_CANCEL_REJECTED`, `ORDER_NOT_CANCELLABLE` | 409 | 브로커 거부 / 취소 불가 상태 |
 | `PAPER_ORDER_UNKNOWN`, `PAPER_ORDER_CANCEL_UNKNOWN` | 502 | 전송 결과 불확실. 내부 상태는 `UNKNOWN` |
 | `ORDER_NOT_FOUND` | 404 | 취소 대상 없음 |
@@ -138,7 +166,8 @@ workers/quote-api/src/
 |---|---:|---:|---|
 | DRY_RUN | 없음 | 없음 | 요청 검증, Kill Switch, Risk Manager(`referencePrice`, 현재 시각을 시세 기준 시각으로 사용) |
 | PAPER | 모의투자 | 정규장만 | 위 항목 + 계좌 설정, reconciliation Gate, 실시간 시세(`fetchedAt` 기준 15초), `clientOrderId` 멱등성 |
-| LIVE | 미구현 | — | 조회만. 주문 API 추가 시 별도 명시적 활성화 게이트 필요 |
+| LIVE | 실계좌 (기본 비활성) | 정규장만 | 위 PAPER 항목 + `checkLiveTradingGate`(플래그, PAPER 검증일, arm, 확인 문구). 운영자 수동 호출만, 스케줄러 미지원 |
+| 자동매매 엔진 | DRY_RUN 또는 PAPER | PAPER만 정규장 | RUNNING 상태에서 Cron 5분 사이클. Kill Switch → EMERGENCY_STOP, 오류 → ERROR |
 
 DRY_RUN은 장외시간·주말에도 KIS 상태와 무관하게 동작해야 하며, 이를 위해 PAPER/LIVE 안전장치를 약화하지 않는다.
 
@@ -176,16 +205,18 @@ CREATED → SUBMITTING → SUBMITTED → ACCEPTED → PARTIALLY_FILLED → FILLE
 |---|---|
 | CREATED | SUBMITTING, CANCELED |
 | SUBMITTING | SUBMITTED, REJECTED, UNKNOWN |
-| SUBMITTED | ACCEPTED, PARTIALLY_FILLED, FILLED, CANCELED, REJECTED, UNKNOWN |
-| ACCEPTED | PARTIALLY_FILLED, FILLED, CANCELED, REJECTED, UNKNOWN |
-| PARTIALLY_FILLED | PARTIALLY_FILLED, FILLED, CANCELED, UNKNOWN |
+| SUBMITTED | ACCEPTED, PARTIALLY_FILLED, FILLED, CANCEL_PENDING, CANCELED, REJECTED, UNKNOWN |
+| ACCEPTED | PARTIALLY_FILLED, FILLED, CANCEL_PENDING, CANCELED, REJECTED, UNKNOWN |
+| PARTIALLY_FILLED | PARTIALLY_FILLED, FILLED, CANCEL_PENDING, CANCELED, UNKNOWN |
+| CANCEL_PENDING | PARTIALLY_FILLED, FILLED, CANCELED, UNKNOWN |
 | UNKNOWN | RECONCILING |
-| RECONCILING | SUBMITTED, ACCEPTED, PARTIALLY_FILLED, FILLED, CANCELED, REJECTED, UNKNOWN |
+| RECONCILING | SUBMITTED, ACCEPTED, PARTIALLY_FILLED, FILLED, CANCEL_PENDING, CANCELED, REJECTED, UNKNOWN |
 | FILLED / CANCELED / REJECTED | (종결) |
 
 - `FILLED`는 `executedQuantity === quantity`, `PARTIALLY_FILLED`는 `0 < executedQuantity < quantity`를 요구한다.
 - 전송 중 네트워크/타임아웃/응답 파싱 실패는 `UNKNOWN`으로 기록하고 재전송하지 않는다. `/paper/reconcile`이 KIS 당일 주문내역으로 `UNKNOWN → RECONCILING → 실제 상태`로 복구한다.
 - 주문 POST는 KIS 5xx 응답에 재시도하지 않는다(중복 주문 위험). 429만 재시도한다.
+- 취소 접수 응답은 `CANCEL_PENDING`으로 기록한다. 취소 전 체결과의 경합은 resync가 KIS 내역으로 확정한다.
 
 ## 8. 중복 주문 방지
 
@@ -210,15 +241,17 @@ CREATED → SUBMITTING → SUBMITTED → ACCEPTED → PARTIALLY_FILLED → FILLE
 
 ## 11. 알려진 한계
 
-- 내부 포지션(`InternalState.positions`)을 KIS 계좌로 갱신하는 경로가 없다. 계좌에 보유종목이 있으면 `/reconciliation`은 항상 `MISMATCHED`이며 PAPER 신규 주문 Gate가 닫힌다. 포지션 동기화 정책(체결 기반 갱신 vs KIS 스냅샷 채택)을 결정해야 한다.
-- `RiskState.dailyLoss`는 어느 경로에서도 계산하지 않아 일일 손실 한도는 실질적으로 동작하지 않는다.
-- PAPER 취소 접수 응답만으로 `CANCELED`로 기록한다. 취소 전 체결과의 경합은 다음 `/paper/reconcile`에서 드러나며, `CANCELED`는 종결 상태라 자동 복구되지 않는다.
-- `market-session.ts`는 KRX 휴장일을 반영하지 않는다.
-- 감사 로그, 자동 실행 스케줄러, 전략 엔진은 미구현이다.
+- 내부 포지션 기준선은 `POST /paper/position-sync`로 운영자가 만든다. 기준선 이전 손익은 PAPER 실현손익에 반영되지 않는다.
+- `TTTC8715R` 기간별매매손익은 LIVE 전용이라 PAPER는 내부 원장으로 대체한다.
+- `market-session.ts`는 KRX 휴장일을 반영하지 않는다. 휴장일 사이클은 KIS 응답에 따라 `ERROR`로 전이할 수 있다.
+- 자동매매는 하루에 종목·방향별 1회만 주문한다(멱등 키 `AUTO-{mode}-{날짜}-{종목}-{방향}`).
+- Risk 한도·전략 파라미터 기본값은 코드 상수다. 감사 로그는 500건만 유지한다.
+- 스케줄러는 LIVE 모드를 지원하지 않는다. 실계좌 주문은 운영자의 수동 호출만 가능하다.
 
 ## 12. 프론트엔드
 
 - `src/main.ts` 단일 파일 대시보드. `VITE_QUOTE_API_BASE_URL`이 없으면 샘플 시세 모드.
-- 사용하는 Worker 엔드포인트: `/quotes`, `/account`, `/dry-run`, `/orders`, `/reconciliation`, `/risk`, `/dry-run/orders`, `/dry-run/reset`.
+- 사용하는 Worker 엔드포인트: `/quotes`, `/account`, `/dry-run`, `/orders`, `/reconciliation`, `/risk`, `/trading/status`, `/audit`, `/dry-run/orders`, `/dry-run/reset`, `/trading/start|stop|run`, `/risk/kill-switch`.
 - DRY_RUN 주문 버튼은 Kill Switch와 시세 유효성에만 의존한다. reconciliation 결과는 정보용 배지로 표시한다.
+- 자동매매 패널은 DRY_RUN 모드(관심종목, SMA 5/20)만 시작할 수 있다. PAPER/LIVE는 UI에서 시작하지 않는다.
 - 브라우저는 KIS Secret을 보유하지 않으며 KIS 주문 API를 직접 호출하지 않는다.

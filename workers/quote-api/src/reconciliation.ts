@@ -1,6 +1,7 @@
 export interface ReconciliationPosition {
   symbol: string;
   quantity: number;
+  averagePrice?: number;
 }
 
 export interface ReconciliationOrder {

@@ -6,7 +6,8 @@
     "dev": "wrangler dev --var ALLOWED_ORIGIN:http://localhost:5173",
     "dev:paper": "wrangler dev --var ALLOWED_ORIGIN:http://localhost:5173 --var KIS_ENVIRONMENT:PAPER",
     "check": "tsc --noEmit",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260915.1",

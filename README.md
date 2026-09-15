@@ -24,9 +24,9 @@ KIS Open API
 
 현재 단계와 남은 작업은 [`docs/status.md`](./docs/status.md)를 기준으로 한다.
 
-- Cloudflare Worker `quote-api`: KIS 인증/토큰 캐시, 시세·계좌·주문내역 조회(LIVE), reconciliation, DRY_RUN 시뮬레이터, Risk Manager, Kill Switch, PAPER 주문/취소/재동기화 경로
-- GitHub Pages 프론트엔드: 관심종목 시세, 계좌 현황, DRY_RUN 주문 UI, Kill Switch 상태 표시
-- 운영 Worker의 `KIS_ENVIRONMENT`는 `LIVE`(조회 전용)이므로 PAPER 주문 전송은 운영 환경에서 수행하지 않는다
+- Cloudflare Worker `quote-api`: KIS 인증/토큰 캐시, 시세·일봉·계좌·주문내역 조회, reconciliation, DRY_RUN 시뮬레이터, Risk Manager, Kill Switch, PAPER 주문/취소/재동기화, SMA 전략·백테스트, Cron 자동매매 엔진(DRY_RUN/PAPER), 감사 로그·알림, 실계좌 게이트(기본 비활성)
+- GitHub Pages 프론트엔드: 관심종목 시세, 계좌 현황, DRY_RUN 주문, 자동매매 시작/정지, Kill Switch, 감사 로그
+- 운영 Worker의 `KIS_ENVIRONMENT`는 `LIVE`(조회 전용)이므로 PAPER 주문 전송은 운영 환경에서 수행하지 않는다. 실계좌 주문은 `docs/operations.md` §8 절차 없이는 열리지 않는다
 
 ## 구조
 
@@ -69,6 +69,8 @@ npm run dev:paper    # 모의투자 키로 KIS_ENVIRONMENT=PAPER 실행
 - [`docs/status.md`](./docs/status.md) — 현재 구현 상태, 최근 변경, 남은 작업
 - [`docs/roadmap.md`](./docs/roadmap.md) — 단계별 개발 로드맵
 - [`docs/design.md`](./docs/design.md) — 시스템 구조, Worker 엔드포인트 계약, 데이터 모델
+- [`docs/trading.md`](./docs/trading.md) — 전략·주문·Risk 규칙
+- [`docs/operations.md`](./docs/operations.md) — 운영 매뉴얼, 장애 대응, 실계좌 활성화 체크리스트
 - [`docs/quote-contract.md`](./docs/quote-contract.md) — 시세 API 계약 및 freshness 정책
 - [`docs/api-strategy.md`](./docs/api-strategy.md) — 데이터 공급자 선정 기록
 

@@ -5,6 +5,11 @@ compatibility_date = "2026-09-04"
 [vars]
 KIS_ENVIRONMENT = "LIVE"
 ALLOWED_ORIGIN = "https://poormanz.github.io"
+# LIVE_TRADING_ENABLED / PAPER_VERIFICATION_DATE 는 의도적으로 두지 않는다. 실계좌 주문 게이트는 기본 비활성이다.
+
+# KST 09:00~15:59 평일, 5분 간격. 엔진이 RUNNING 상태일 때만 동작한다.
+[triggers]
+crons = ["*/5 0-6 * * 1-5"]
 
 [secrets]
 required = ["APP_KEY", "APP_SECRET", "ACCOUNT_CANO", "ACCOUNT_PRODUCT_CODE"]
@@ -28,6 +33,14 @@ class_name = "DryRunStateStoreDO"
 name = "RISK_STATE_STORE"
 class_name = "RiskStateStoreDO"
 
+[[durable_objects.bindings]]
+name = "AUDIT_LOG_STORE"
+class_name = "AuditLogStoreDO"
+
+[[durable_objects.bindings]]
+name = "TRADING_STATE_STORE"
+class_name = "TradingStateStoreDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["KISTokenBroker"]
@@ -43,3 +56,7 @@ new_sqlite_classes = ["DryRunStateStoreDO"]
 [[migrations]]
 tag = "v4"
 new_sqlite_classes = ["RiskStateStoreDO"]
+
+[[migrations]]
+tag = "v5"
+new_sqlite_classes = ["AuditLogStoreDO", "TradingStateStoreDO"]

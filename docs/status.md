@@ -2,13 +2,13 @@
 
 > 기준일: 2026-09-15
 > 기준 브랜치: `main`
-> 정리 기준 커밋: `b80a185` (`docs: record PAPER position sync status`)
+> 정리 기준 커밋: `7d6ec96` 이후 미커밋 작업 포함 (전략/백테스트, 스케줄러, 감사 로그, 실계좌 게이트, PAPER dailyLoss 원장)
 
 ## 1. 프로젝트 목표
 
-한국투자증권(KIS) API를 기반으로 한 자동 주식매매 시스템을 단계적으로 구축한다. 현재는 **LIVE 환경에서 조회 기능을 운영하고, DRY_RUN으로 주문·위험관리 로직을 검증하며, PAPER 주문 경로를 별도로 개발/검증하는 단계**다.
+한국투자증권(KIS) API를 기반으로 한 자동 주식매매 시스템을 단계적으로 구축한다. 현재는 **LIVE 환경에서 조회 기능을 운영하고, DRY_RUN으로 주문·위험관리·자동매매 엔진을 검증하며, PAPER 주문 경로의 안정성 검증을 앞둔 단계**다.
 
-실계좌 주문 API는 아직 구현하지 않으며, 안정성 검증이 끝나기 전에는 실거래를 활성화하지 않는다.
+실계좌 주문 경로(`/live/*`)는 코드로 존재하지만 환경변수 `LIVE_TRADING_ENABLED`와 `PAPER_VERIFICATION_DATE`가 없으면 항상 차단되며, 운영 설정에는 두 값을 두지 않는다. 모의투자 안정성 검증(`docs/operations.md` §8)이 끝나기 전에는 활성화하지 않는다.
 
 ## 2. 현재 환경
 
@@ -17,7 +17,8 @@
 - 국내주식 계좌 상품코드: `01`
 - GitHub Pages 프론트엔드 → Cloudflare Worker API 구조
 - KIS Access Token은 캐시를 활용해 24시간 재사용하는 구조
-- LIVE 주문 API는 구현/호출하지 않음
+- LIVE 주문 어댑터는 존재하지만 게이트 미설정으로 호출되지 않음 (`GET /live/status` → `LIVE_TRADING_DISABLED`)
+- Cron Trigger `*/5 0-6 * * 1-5` (KST 평일 09:00~15:59). 엔진 기본 상태 `STOPPED`
 
 ## 3. 완료된 핵심 기능
 
@@ -83,12 +84,30 @@
 
 현재 Worker 자체가 `LIVE` 환경이므로 PAPER 주문/동기화 경로를 실제 운영 Worker에서 수행하지 않는다.
 
+### 전략 / 백테스트 / 자동매매 (2026-09-15 추가, 미커밋)
+
+- `strategy.ts`: Strategy 인터페이스, SMA 교차 전략, 손절/익절, 포지션 사이징
+- `backtest.ts` + `GET /candles`, `GET /strategies`, `POST /backtest`: KIS 일봉 기반 시뮬레이션(다음 봉 시가 체결, DRY_RUN 비용 모델)
+- `trading-engine.ts` + `trading-state.ts`: Cron 5분 사이클, DO lease, 실행 이력, `STOPPED/READY/RUNNING/ERROR/EMERGENCY_STOP`
+- `/trading/status|runs|configure|start|stop|run`. 스케줄러는 DRY_RUN·PAPER만 지원
+
+### 감사 / 알림 / 원장
+
+- `audit-log.ts` + `GET /audit`: 마스킹된 감사 이벤트 500건
+- `alerts.ts`: `ALERT_WEBHOOK_URL` 알림(UNKNOWN 주문, 긴급정지, 시스템 오류, LIVE arm)
+- `position-ledger.ts`: 체결 증분 기반 포지션·평균단가·당일 실현손익. PAPER `dailyLoss` 공급원
+
+### 실계좌 게이트
+
+- `live-trading-gate.ts`, `live-routes.ts`, `kis-live-order-adapter.ts` (`kis-cash-order-adapter.ts` 공통화)
+- `/live/status|arm|disarm|orders|orders/cancel`. 기본 403 `LIVE_TRADING_DISABLED`
+
 ## 4. 포지션 동기화 정책
 
-내부 포지션은 자동 주문 경로에서 KIS 값으로 조용히 덮어쓰지 않는다. 운영자가 명시적으로 `POST /paper/position-sync`를 호출하면 KIS `AccountSnapshot.positions`의 `symbol`과 `quantity`를 내부 Durable Object 포지션에 반영한다.
+내부 포지션은 자동 주문 경로에서 KIS 값으로 조용히 덮어쓰지 않는다. 운영자가 명시적으로 `POST /paper/position-sync`를 호출하면 KIS `AccountSnapshot.positions`의 `symbol`, `quantity`, `averagePrice`를 내부 Durable Object 포지션 기준선으로 반영한다.
 
 - 기존 `orderRecords`와 주문 요약은 보존한다.
-- 체결 기록을 근거 없이 역산해 포지션을 추정하지 않는다.
+- 기준선 이후에는 주문 기록의 체결 증분(`executedQuantity` 차이)만으로 포지션·평균단가·당일 실현손익을 갱신한다(`position-ledger.ts`). 같은 기록을 다시 적용해도 변화가 없다.
 - 외부에서 발생한 예상치 못한 포지션 변경은 자동 주문 시 reconciliation mismatch로 감지되며 fail-closed 한다.
 - 동기화 후에도 주문 상태가 KIS와 다르면 신규주문 Gate는 열린 상태로 바뀌지 않는다.
 - DRY_RUN은 별도 가상 상태를 사용하므로 이 동기화 경로의 대상이 아니다.
@@ -108,7 +127,7 @@
 - Kill Switch
 - 손익 데이터 미확인 시 신규주문 fail-closed (`DAILY_LOSS_UNAVAILABLE`)
 
-`dailyLoss` 계산 순수 로직과 LIVE `TTTC8715R` Adapter 1차 구현이 완료되었다. 다만 현재 PAPER 환경에서는 KIS 공식 샘플에서 해당 기간별매매손익 API의 PAPER TR ID를 확인하지 못했으므로 추측한 `VTTC*` TR을 사용하지 않는다.
+`dailyLoss` 공급원: LIVE는 `TTTC8715R` 기간별매매손익, PAPER는 체결 증분 원장의 당일 실현손익, DRY_RUN은 시뮬레이터의 실현손익(수수료·세금 차감). PAPER용 `VTTC*` TR은 추측하지 않는다. 공급원이 없으면 `DAILY_LOSS_UNAVAILABLE`로 차단한다.
 
 ## 6. LIVE / PAPER / DRY_RUN 역할 구분
 
@@ -116,7 +135,7 @@
 |---|---|---:|---:|
 | DRY_RUN | 로컬/가상 주문 검증 | 없음 | 없음 |
 | PAPER | KIS 모의투자 주문 검증 | 있음 | 있음 |
-| LIVE | 실제 계좌 조회/운영 기반 | 현재 주문 미구현 | 실제 운영 규칙 적용 |
+| LIVE | 실제 계좌 조회/운영 기반 | 게이트 통과 시 운영자 수동 주문만 (기본 비활성, 스케줄러 미지원) | 실제 운영 규칙 적용 |
 
 핵심 원칙은 **DRY_RUN을 KIS와 분리하고, PAPER/LIVE의 안전장치를 약화시키지 않는 것**이다.
 
@@ -140,23 +159,27 @@
 
 ## 8. 검증 상태
 
-기존 로컬 검증(`96b0a0e` 기준):
+로컬 검증(2026-09-15 미커밋 작업 기준):
 
 | 항목 | 결과 |
 |---|---|
 | Worker `npm run check` | 통과 |
-| Worker `npm test` | 17 파일 / 86 테스트 통과 |
+| Worker `npm test` | 28 파일 / 141 테스트 통과 |
+| Worker `npm run test:integration` | 환경변수 없음 → 2 skipped |
+| `wrangler deploy --dry-run` | 번들 성공, DO 6개·KV·Cron 인식 |
+| 로컬 `wrangler dev --test-scheduled` 스모크 | `/trading/*`, `/live/status`, `/audit`, `/__scheduled`, Kill Switch 동작 확인 (KIS 키 없음 → 사이클 `ERROR[DATA]` 전이 확인) |
 | 프론트 `npm run check` / `npm run build` | 통과 |
 
-이번 변경으로 daily-loss 순수 테스트와 Risk Manager fail-closed 테스트가 추가되었으므로 최신 `main`에서 CI/로컬 검증을 다시 통과시켜야 한다.
+이 작업은 아직 push/배포 전이다.
 
 ## 9. 아직 남은 작업
 
 ### 최우선
 
-1. PAPER 주문 경로에 검증된 dailyLoss 공급 연결
-2. 최신 변경 기준 Worker check/test 재검증
-3. PAPER 주문 안정성 검증
+1. push → Deploy Workflow(check → test → deploy) 성공 및 `v5` 마이그레이션(AuditLogStoreDO, TradingStateStoreDO) 적용 확인
+2. 배포된 Worker에서 `/trading/status`, `/live/status`=`LIVE_TRADING_DISABLED`, `/audit`, `OPTIONS` 204 실측
+3. Pages UI에서 DRY_RUN 자동매매 시작 → 5분 Cron 실행 이력·감사 로그 관찰
+4. PAPER 주문 안정성 검증 (`docs/operations.md` §8)
 
 ### Phase 7
 
@@ -167,27 +190,23 @@
 
 ### 이후
 
-- Strategy 인터페이스
-- 진입/청산 전략
-- 포지션 사이징
-- 손절/익절
-- 백테스트
-- 자동 실행 스케줄러
-- 모니터링/감사 로그
-- 실계좌 매매 게이트
-- 운영 안정화 및 실거래 전 체크리스트
+- 추가 전략(모멘텀, 변동성 돌파)과 파라미터 탐색, 백테스트 결과 UI
+- Risk 한도(`DEFAULT_RISK_CONFIG`) 환경변수화
+- 감사 로그 장기 보관(외부 저장소)
+- 실계좌 활성화는 운영자 결정 사항이며 Secret으로만 제어한다
 
 ## 10. 알려진 한계
 
-- KIS 공식 샘플에서 확인되는 `TTTC8715R` 기간별매매손익 API는 LIVE용으로 확인되며 PAPER용 TR ID는 확인하지 않았다.
-- 따라서 PAPER에서는 손익 조회를 추측하지 않고 fail-closed 해야 한다.
-- PAPER 취소는 접수 응답만으로 `CANCELED` 처리하며, 취소 전 체결 경합은 자동 복구되지 않는다.
-- `market-session.ts`는 KRX 휴장일을 반영하지 않는다.
-- 최신 코드의 전체 check/test 결과는 다음 검증에서 다시 확인한다.
+- `TTTC8715R` 기간별매매손익은 LIVE 전용이다. PAPER 실현손익은 내부 원장 기준이므로 `position-sync` 기준선 이전의 손익은 반영되지 않는다.
+- 취소 접수는 `CANCEL_PENDING`으로 기록하고 resync가 확정한다. resync 전까지는 취소 여부가 미확정이다.
+- `market-session.ts`는 KRX 휴장일을 반영하지 않는다. 휴장일에 엔진이 돌면 KIS 응답에 따라 `ERROR`로 전이할 수 있다.
+- 자동매매는 하루에 종목·방향별 1회만 주문한다(멱등 키). 같은 날 재진입은 하지 않는다.
+- Risk 한도와 전략 파라미터 기본값은 코드 상수다.
+- 감사 로그는 DO 1개에 500건만 유지한다.
 
 ## 11. 안전 원칙
 
-- 실제 LIVE 주문 POST는 아직 수행하지 않는다.
+- 실제 LIVE 주문 POST는 게이트(`LIVE_TRADING_ENABLED`, `PAPER_VERIFICATION_DATE`, arm, 확인 문구, Kill Switch, 정규장, Risk)를 모두 통과한 운영자 수동 호출에서만 발생한다. 운영 설정에는 두 환경변수를 두지 않는다.
 - DRY_RUN 수정 때문에 LIVE/PAPER 안전장치를 약화하지 않는다.
 - 실계좌 매매는 모의투자 안정성 검증 이후에만 별도 게이트를 둔다.
 - Secret / 계좌번호 등 민감정보는 문서에 기록하지 않는다.

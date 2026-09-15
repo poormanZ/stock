@@ -22,6 +22,10 @@ type DryRunResult = { mode: string; idempotent?: boolean; order: Order; cash: nu
 type OrdersResponse = { asOf: string; orders: Order[] };
 type Reconciliation = { asOf?: string; status: 'MATCHED' | 'MISMATCHED'; canPlaceNewOrders: boolean; differences: { type: string; symbol?: string; brokerOrderId?: string; message: string }[] };
 type KillSwitch = { active: boolean; reason?: string; activatedAt?: string; updatedAt: string };
+type TradingRun = { id: string; trigger: string; mode: string; startedAt: string; status: string; reason?: string; signals: { symbol: string; action: string; reason: string }[]; orders: { symbol: string; side: string; quantity: number; result: string }[]; error?: { source: string; message: string } };
+type Trading = { status: 'STOPPED' | 'READY' | 'RUNNING' | 'ERROR' | 'EMERGENCY_STOP'; config: { mode: string; symbols: string[]; strategy: { id: string; params: Record<string, number> } } | null; lastRun?: TradingRun; error?: string; updatedAt: string };
+type AuditEvent = { id: string; at: string; type: string; mode: string; symbol?: string; message: string };
+type AuditLog = { count: number; events: AuditEvent[] };
 
 let stocks = loadWatchlist(catalog);
 let quotes: StockQuote[] = [];
@@ -30,6 +34,8 @@ let dryRun: DryRun | null = null;
 let orderHistory: OrdersResponse | null = null;
 let reconciliation: Reconciliation | null = null;
 let killSwitch: KillSwitch | null = null;
+let trading: Trading | null = null;
+let audit: AuditLog | null = null;
 let selectedSymbol = stocks[0]?.symbol ?? '005930';
 let side: 'buy' | 'sell' = 'buy';
 let orderType: 'market' | 'limit' = 'limit';
@@ -75,13 +81,15 @@ async function refreshAll(): Promise<void> {
   busy = true; message = '데이터 동기화 중…'; render();
   const failures: string[] = [];
   try {
-    const [q, a, d, o, r, k] = await Promise.allSettled([
+    const [q, a, d, o, r, k, t, l] = await Promise.allSettled([
       quoteProvider.getQuotes(stocks.map((s) => s.symbol)),
       get<Account>('/account'),
       get<DryRun>('/dry-run'),
       get<OrdersResponse>('/orders'),
       get<Reconciliation>('/reconciliation'),
       get<KillSwitch>('/risk'),
+      get<Trading>('/trading/status'),
+      get<AuditLog>('/audit?limit=8'),
     ]);
 
     if (q.status === 'fulfilled') quotes = withNames(q.value); else failures.push(`시세: ${apiError(q.reason)}`);
@@ -90,6 +98,8 @@ async function refreshAll(): Promise<void> {
     if (o.status === 'fulfilled') orderHistory = o.value; else failures.push(`주문이력: ${apiError(o.reason)}`);
     if (r.status === 'fulfilled') reconciliation = r.value; else failures.push(`RECONCILIATION: ${apiError(r.reason)}`);
     if (k.status === 'fulfilled') killSwitch = k.value; else failures.push(`KILL SWITCH: ${apiError(k.reason)}`);
+    if (t.status === 'fulfilled') trading = t.value; else failures.push(`자동매매: ${apiError(t.reason)}`);
+    if (l.status === 'fulfilled') audit = l.value; else failures.push(`감사로그: ${apiError(l.reason)}`);
 
     if (!quotes.some((qv) => qv.symbol === selectedSymbol)) selectedSymbol = quotes[0]?.symbol ?? selectedSymbol;
     const selected = selectedQuote();
@@ -135,6 +145,32 @@ async function resetDryRun(): Promise<void> {
   render();
 }
 
+async function refreshControl(): Promise<void> {
+  const [t, l, k] = await Promise.allSettled([get<Trading>('/trading/status'), get<AuditLog>('/audit?limit=8'), get<KillSwitch>('/risk')]);
+  if (t.status === 'fulfilled') trading = t.value;
+  if (l.status === 'fulfilled') audit = l.value;
+  if (k.status === 'fulfilled') killSwitch = k.value;
+}
+
+async function control(label: string, action: () => Promise<unknown>, confirmText?: string): Promise<void> {
+  if (!live || busy || (confirmText && !confirm(confirmText))) return;
+  busy = true; message = `${label} 처리 중…`; render();
+  try { await action(); message = `${label} 완료`; } catch (error) { message = `${label} 실패: ${apiError(error)}`; }
+  finally { await refreshControl(); busy = false; render(); }
+}
+
+/** 관심종목 전체를 SMA 교차 전략 DRY_RUN으로 설정하고 시작한다. PAPER/LIVE는 UI에서 시작하지 않는다 */
+const startDryRunTrading = () => control('자동매매 시작', () => post('/trading/start', {
+  config: { mode: 'DRY_RUN', symbols: stocks.map((s) => s.symbol).slice(0, 10), strategy: { id: 'sma-crossover', params: { fast: 5, slow: 20 } }, candleBars: 60 },
+}), `관심종목 ${Math.min(stocks.length, 10)}개를 DRY_RUN 자동매매(SMA 5/20)로 시작할까요? 5분마다 KIS 시세로 평가하고 가상 주문만 냅니다.`);
+const stopTrading = () => control('자동매매 정지', () => post('/trading/stop', {}));
+const runTradingNow = () => control('수동 1회 실행', () => post('/trading/run', {}));
+const toggleKillSwitch = () => {
+  const activate = !killSwitch?.active;
+  return control(activate ? 'KILL SWITCH 활성화' : 'KILL SWITCH 해제', () => post('/risk/kill-switch', activate ? { action: 'activate', reason: 'dashboard' } : { action: 'deactivate' }),
+    activate ? '모든 신규 주문을 즉시 차단하고 자동매매를 EMERGENCY_STOP으로 전환합니다. 계속할까요?' : 'Kill Switch를 해제할까요? 자동매매는 별도로 다시 시작해야 합니다.');
+};
+
 function positionRows(): string {
   if (!account?.positions.length) return '<tr><td colspan="5" class="empty">국내 보유 종목이 없습니다.</td></tr>';
   return account.positions.map((p) => `<tr><td>${esc(p.name || p.symbol)}</td><td>${p.symbol}</td><td>${qtyFmt.format(p.quantity)}</td><td>${money(p.averagePrice ?? 0)}</td><td>${money(p.evaluationAmount ?? 0)}</td></tr>`).join('');
@@ -147,6 +183,28 @@ function orderRows(): string {
   const rows = [...(dryRun?.orders ?? [])].reverse().slice(0, 8);
   if (!rows.length) return '<tr><td colspan="6" class="empty">DRY_RUN 주문 이력이 없습니다.</td></tr>';
   return rows.map((o) => `<tr><td>${time(o.createdAt)}</td><td>${o.side === 'buy' ? '매수' : '매도'}</td><td>${o.symbol}</td><td>${o.orderType === 'limit' ? '지정가' : '시장가'}</td><td>${qtyFmt.format(o.executedQuantity)}/${qtyFmt.format(o.quantity)}</td><td><span class="status-pill">${esc(o.status)}</span></td></tr>`).join('');
+}
+
+function tradingPanel(): string {
+  const status = trading?.status ?? '—';
+  const tone = status === 'RUNNING' ? 'ok' : status === 'ERROR' || status === 'EMERGENCY_STOP' ? 'blocked' : '';
+  const cfg = trading?.config;
+  const last = trading?.lastRun;
+  const lastText = last
+    ? `${time(last.startedAt)} · ${last.trigger} · ${esc(last.status)}${last.reason ? ` (${esc(last.reason)})` : ''}${last.error ? ` · ${esc(last.error.source)}: ${esc(last.error.message)}` : ''} · 신호 ${last.signals.filter((sg) => sg.action !== 'hold').length} · 주문 ${last.orders.length}`
+    : '실행 이력 없음';
+  const canStart = live && !busy && status !== 'RUNNING' && status !== 'EMERGENCY_STOP' && !killSwitch?.active;
+  return `<div class="panel"><div class="section-title"><div><p class="eyebrow">AUTO TRADING / ${esc(cfg?.mode ?? 'DRY_RUN')}</p><h2>자동매매 엔진</h2></div><span class="gate ${tone}">${esc(status)}</span></div>
+    <div class="order-preview"><span>전략 <b>${cfg ? `${esc(cfg.strategy.id)} ${esc(JSON.stringify(cfg.strategy.params))}` : '—'}</b></span><span>종목 <b>${cfg ? esc(cfg.symbols.join(', ')) : '—'}</b></span><span>최근 실행 <b>${lastText}</b></span>${trading?.error ? `<span>오류 <b>${esc(trading.error)}</b></span>` : ''}</div>
+    <div class="segmented"><button id="trading-start" ${canStart ? '' : 'disabled'}>DRY_RUN 시작</button><button id="trading-stop" ${live && !busy && status === 'RUNNING' ? '' : 'disabled'}>정지</button></div>
+    <div class="segmented"><button id="trading-run" ${live && !busy && status === 'RUNNING' ? '' : 'disabled'}>지금 1회 실행</button><button id="kill-switch" class="${killSwitch?.active ? '' : 'active'}" ${live && !busy ? '' : 'disabled'}>${killSwitch?.active ? 'KILL SWITCH 해제' : 'KILL SWITCH'}</button></div>
+    <p class="message">PAPER/LIVE 자동 실행은 대시보드에서 시작하지 않습니다. 스케줄은 KST 평일 09:00~15:59 5분 간격입니다.</p></div>`;
+}
+
+function auditRows(): string {
+  const rows = audit?.events ?? [];
+  if (!rows.length) return '<tr><td colspan="4" class="empty">감사 이벤트가 없습니다.</td></tr>';
+  return rows.map((e) => `<tr><td>${time(e.at)}</td><td><span class="status-pill">${esc(e.type)}</span></td><td>${esc(e.mode)}${e.symbol ? ` · ${esc(e.symbol)}` : ''}</td><td class="wrap">${esc(e.message)}</td></tr>`).join('');
 }
 
 function reconciliationBadge(): string {
@@ -175,12 +233,17 @@ function render(): void {
       <div class="panel order-panel"><div class="section-title"><div><p class="eyebrow">DRY_RUN</p><h2>주문 시뮬레이터</h2></div><span class="gate ${killed ? 'blocked' : 'ok'}">${killed ? 'KILL SWITCH' : 'RISK MANAGER 적용'}</span></div><label>종목<select id="symbol">${options}</select></label><div class="segmented"><button data-side="buy" class="${side === 'buy' ? 'active' : ''}">매수</button><button data-side="sell" class="${side === 'sell' ? 'active' : ''}">매도</button></div><div class="segmented"><button data-type="limit" class="${orderType === 'limit' ? 'active' : ''}">지정가</button><button data-type="market" class="${orderType === 'market' ? 'active' : ''}">시장가</button></div><div class="form-grid"><label>수량<input id="quantity" type="number" min="1" step="1" value="${quantity}"></label><label>가격<input id="limit-price" type="number" min="1" step="1" value="${limitPrice || selected?.price || 0}" ${orderType === 'market' ? 'disabled' : ''}></label></div><div class="order-preview"><span>기준 시세 <b>${selected ? money(selected.price) : '—'}</b></span><span>예상 주문금액 <b>${selected ? money(previewPrice * quantity) : '—'}</b></span></div><button id="submit-order" class="primary" ${canSubmit ? '' : 'disabled'}>${killed ? 'KILL SWITCH · 주문 차단' : 'DRY_RUN 주문 실행'}</button><button id="reset-dry" class="btn ghost" ${busy ? 'disabled' : ''}>DRY_RUN 1,000만원 초기화</button><p class="message" role="status">${esc(message)}</p></div>
     </section>
     <section class="layout-grid lower"><div class="panel"><div class="section-title"><div><p class="eyebrow">DRY_RUN STATE</p><h2>가상 포지션</h2></div><b class="cash">${dryRun ? money(dryRun.cash) : '—'}</b></div><div class="table-wrap"><table><thead><tr><th>코드</th><th>수량</th><th>평균단가</th><th>평가 기준금액</th></tr></thead><tbody>${dryPositionRows()}</tbody></table></div></div><div class="panel"><div class="section-title"><div><p class="eyebrow">ORDER LOG</p><h2>DRY_RUN 주문 이력</h2></div><span>최근 8건${orderHistory ? ` · KIS 당일 주문 ${orderHistory.orders.length}건` : ''}</span></div><div class="table-wrap"><table><thead><tr><th>시간</th><th>구분</th><th>코드</th><th>유형</th><th>체결</th><th>상태</th></tr></thead><tbody>${orderRows()}</tbody></table></div></div></section>
-    <footer><span>실제 KIS 주문 API는 호출하지 않습니다.</span><span>Kill Switch → Risk Manager → DRY_RUN Engine</span></footer>
+    <section class="layout-grid lower">${tradingPanel()}<div class="panel"><div class="section-title"><div><p class="eyebrow">AUDIT LOG</p><h2>최근 감사 이벤트</h2></div><span>${audit ? `총 ${audit.count}건` : '—'}</span></div><div class="table-wrap"><table><thead><tr><th>시간</th><th>유형</th><th>모드</th><th>내용</th></tr></thead><tbody>${auditRows()}</tbody></table></div></div></section>
+    <footer><span>대시보드는 DRY_RUN 주문과 자동매매 제어만 수행하며 실계좌 주문 API를 호출하지 않습니다.</span><span>Kill Switch → Risk Manager → DRY_RUN Engine</span></footer>
   </main>`;
 
   document.querySelector<HTMLButtonElement>('#refresh')?.addEventListener('click', () => void refreshAll());
   document.querySelector<HTMLButtonElement>('#submit-order')?.addEventListener('click', () => void submitDryRun());
   document.querySelector<HTMLButtonElement>('#reset-dry')?.addEventListener('click', () => void resetDryRun());
+  document.querySelector<HTMLButtonElement>('#trading-start')?.addEventListener('click', () => void startDryRunTrading());
+  document.querySelector<HTMLButtonElement>('#trading-stop')?.addEventListener('click', () => void stopTrading());
+  document.querySelector<HTMLButtonElement>('#trading-run')?.addEventListener('click', () => void runTradingNow());
+  document.querySelector<HTMLButtonElement>('#kill-switch')?.addEventListener('click', () => void toggleKillSwitch());
   document.querySelector<HTMLSelectElement>('#symbol')?.addEventListener('change', (e) => selectSymbol((e.target as HTMLSelectElement).value));
   document.querySelector<HTMLInputElement>('#quantity')?.addEventListener('input', (e) => { quantity = Math.max(1, Math.trunc(Number((e.target as HTMLInputElement).value)) || 1); });
   document.querySelector<HTMLInputElement>('#limit-price')?.addEventListener('input', (e) => { limitPrice = Math.max(1, Number((e.target as HTMLInputElement).value) || 1); });

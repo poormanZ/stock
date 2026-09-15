@@ -1,4 +1,5 @@
 import { toKstDate } from './kis-common';
+import { LIVE_ARM_MAX_TTL_SECONDS, LIVE_TRADING_CONFIRMATION, type LiveArmState } from './live-trading-gate';
 import type { CreateOrderRequest, Order } from './order-domain';
 
 export interface RiskPosition { symbol: string; quantity: number; }
@@ -89,24 +90,52 @@ export function checkRisk(input: RiskCheckInput): RiskCheckResult {
 }
 
 export interface KillSwitchState { active: boolean; reason?: string; activatedAt?: string; updatedAt: string; }
+/** GET /risk 응답. Kill Switch 상태에 실계좌 arm 상태를 덧붙인다 */
+export interface RiskStateSnapshot extends KillSwitchState { liveArm: LiveArmState | null; }
 const EMPTY_KILL_SWITCH: KillSwitchState = { active: false, updatedAt: new Date(0).toISOString() };
+
+type RiskCommand =
+  | { action: 'activate' | 'deactivate'; reason?: string }
+  | { action: 'arm'; confirmation?: unknown; ttlSeconds?: unknown; reason?: unknown }
+  | { action: 'disarm' };
 
 export class RiskStateStoreDO {
   constructor(private readonly state: DurableObjectState) {}
 
   async fetch(request: Request): Promise<Response> {
     const current = (await this.state.storage.get<KillSwitchState>('kill-switch')) ?? EMPTY_KILL_SWITCH;
-    if (request.method === 'GET') return Response.json(current, { headers: { 'cache-control': 'no-store' } });
+    const arm = (await this.state.storage.get<LiveArmState>('live-arm')) ?? null;
+    const snapshot = (): RiskStateSnapshot => ({ ...current, liveArm: arm && Date.parse(arm.armedUntil) > Date.now() ? arm : null });
+    if (request.method === 'GET') return Response.json(snapshot(), { headers: { 'cache-control': 'no-store' } });
     if (request.method !== 'POST') return Response.json({ error: 'METHOD_NOT_ALLOWED' }, { status: 405 });
 
-    const body = await request.json().catch(() => ({})) as { action?: 'activate' | 'deactivate'; reason?: string };
-    if (body.action !== 'activate' && body.action !== 'deactivate') return Response.json({ error: 'INVALID_KILL_SWITCH_REQUEST' }, { status: 400 });
+    const body = await request.json().catch(() => ({})) as Partial<RiskCommand>;
+    const now = new Date();
 
-    const now = new Date().toISOString();
-    const next: KillSwitchState = body.action === 'activate'
-      ? { active: true, reason: body.reason?.trim().slice(0, 200) || 'manual', activatedAt: current.active ? current.activatedAt : now, updatedAt: now }
-      : { active: false, updatedAt: now };
-    await this.state.storage.put('kill-switch', next);
-    return Response.json(next);
+    if (body.action === 'activate' || body.action === 'deactivate') {
+      const next: KillSwitchState = body.action === 'activate'
+        ? { active: true, reason: (typeof body.reason === 'string' ? body.reason.trim().slice(0, 200) : '') || 'manual', activatedAt: current.active ? current.activatedAt : now.toISOString(), updatedAt: now.toISOString() }
+        : { active: false, updatedAt: now.toISOString() };
+      await this.state.storage.put('kill-switch', next);
+      // 긍급 정지 시 실계좌 arm도 함께 해제한다
+      if (next.active) await this.state.storage.delete('live-arm');
+      return Response.json({ ...next, liveArm: next.active ? null : snapshot().liveArm });
+    }
+
+    if (body.action === 'arm') {
+      if (body.confirmation !== LIVE_TRADING_CONFIRMATION) return Response.json({ error: 'LIVE_CONFIRMATION_REQUIRED' }, { status: 400 });
+      if (current.active) return Response.json({ error: 'KILL_SWITCH_ACTIVE' }, { status: 409 });
+      const ttl = typeof body.ttlSeconds === 'number' && Number.isInteger(body.ttlSeconds) && body.ttlSeconds > 0 ? Math.min(body.ttlSeconds, LIVE_ARM_MAX_TTL_SECONDS) : LIVE_ARM_MAX_TTL_SECONDS;
+      const next: LiveArmState = { armedAt: now.toISOString(), armedUntil: new Date(now.getTime() + ttl * 1000).toISOString(), reason: (typeof body.reason === 'string' ? body.reason.trim().slice(0, 200) : '') || 'manual' };
+      await this.state.storage.put('live-arm', next);
+      return Response.json({ ...current, liveArm: next });
+    }
+
+    if (body.action === 'disarm') {
+      await this.state.storage.delete('live-arm');
+      return Response.json({ ...current, liveArm: null });
+    }
+
+    return Response.json({ error: 'INVALID_KILL_SWITCH_REQUEST' }, { status: 400 });
   }
 }
