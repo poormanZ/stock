@@ -2,7 +2,7 @@
 
 > 기준일: 2026-09-15
 > 기준 브랜치: `main`
-> 정리 기준 커밋: `96b0a0e` (`fix: repair CORS preflight, PAPER risk checks and token expiry; split worker routes`)
+> 정리 기준 커밋: `c4e2db4` (`docs: mark DRY_RUN deployment verification complete`)
 
 ## 1. 프로젝트 목표
 
@@ -63,11 +63,9 @@
 - Risk Manager 연결
 - Kill Switch 연결
 
-#### DRY_RUN 장외시간 문제 수정
+#### DRY_RUN 장외시간 문제 수정 및 배포 후 실측 완료
 
-기존 `/dry-run/orders`는 reconciliation 및 KIS 실시간 시세 조회를 먼저 수행했기 때문에 장외시간·주말에도 외부 KIS API 상태에 영향을 받을 수 있었다.
-
-현재는 다음과 같이 완전히 분리했다.
+기존 `/dry-run/orders`는 reconciliation 및 KIS 실시간 시세 조회를 먼저 수행했기 때문에 장외시간·주말에도 외부 KIS API 상태에 영향을 받을 수 있었다. 이를 분리한 뒤 배포 후 실제 Worker/Pages 환경에서 다음을 모두 검증했다.
 
 - KIS 계좌 조회하지 않음
 - KIS 주문내역 조회하지 않음
@@ -79,8 +77,11 @@
 - Risk Manager의 주문수량/주문금액/포지션/일일한도 검사는 유지
 - Kill Switch는 계속 적용
 - DRY_RUN Durable Object에서 최종 시뮬레이션 처리
-
-따라서 DRY_RUN은 장외시간에도 KIS 장 상태와 무관하게 동작하는 것이 목표이며, LIVE/PAPER 주문 안전장치는 변경하지 않는다.
+- `OPTIONS /dry-run/orders` preflight 정상 응답 및 GitHub Pages Origin CORS 확인
+- `/risk`, `/dry-run`의 GitHub Pages Origin CORS 확인
+- 장외시간 DRY_RUN 주문 성공 확인
+- 동일 `clientOrderId` 재전송 멱등 처리 확인
+- Kill Switch 활성화 시 `KILL_SWITCH_ACTIVE` 거부 확인
 
 ### PAPER
 
@@ -123,22 +124,14 @@ DRY_RUN은 KIS reconciliation을 사용하지 않지만, **Risk Manager 자체�
 
 ## 6. 최근 변경 이력
 
-### `772b470bfa2090434af96584476fbd67fcacaf1f`
+### `c4e2db4` — 2026-09-15 DRY_RUN 배포 후 실측 완료
 
-`fix: isolate DRY_RUN from KIS trading-hours dependencies`
-
-- `/dry-run/orders`에서 `loadReconciliation()` 제거
-- `/dry-run/orders`에서 `KISQuoteAdapter` 제거
-- DRY_RUN 자체 상태와 Risk Manager만 사용
-- `referencePrice` 기반 시뮬레이션
-- 장외시간에도 동작할 수 있도록 외부 KIS 의존성 제거
-
-### `7fbdb948d3b32c43c68306eb823d7579293288b7`
-
-`chore: remove one-time DRY_RUN patch workflow`
-
-- 일회성 DRY_RUN 자동 패치 Workflow 제거
-- 실제 소스 변경이 `main`에 반영된 이후 불필요한 자동 패치 경로 제거
+- CORS preflight 정상 동작 확인
+- `/risk`, `/dry-run` CORS 헤더 확인
+- GitHub Pages 장외시간 DRY_RUN 주문 성공 확인
+- `clientOrderId` 멱등성 확인
+- Kill Switch 차단 확인
+- 로드맵에서 배포 후 실측 검증 항목을 완료 처리
 
 ### `96b0a0e` — 2026-09-15 버그 수정 / 리팩토링
 
@@ -152,10 +145,10 @@ DRY_RUN은 KIS reconciliation을 사용하지 않지만, **Risk Manager 자체�
 - 주문 POST가 5xx를 받으면 재전송하던 로직 제거 (중복 주문 위험). 429만 재시도
 - `UNKNOWN` 주문이 `/paper/reconcile`에서 `RECONCILING`을 거쳐 실제 상태로 복구되도록 수정 (기존: 상태 전이 위반으로 전체 resync 실패)
 - PAPER 접수 처리가 상태 머신(`SUBMITTING → SUBMITTED → ACCEPTED`)을 우회하던 부분 수정
-- 주문 요청 검증에 `side`/`orderType` 열거값 검사 추가 (기존: 임의 값이 PAPER에서 매도 TR로 전송될 수 있었음)
+- 주문 요청 검증에 `side`/`orderType` 열거값 검사 추가
 - DRY_RUN 동일 `clientOrderId` 재전송 시 새 주문을 만들지 않고 기존 결과 반환
 - 프론트엔드: DRY_RUN 주문 버튼이 reconciliation 결과에 묶여 장외/보유종목 존재 시 비활성화되던 문제 수정, Kill Switch 상태 표시, 종목명/수신 시각 표시
-- 구조: `index.ts` 단일 파일 라우터를 `query-routes` / `dry-run-routes` / `paper-routes` / `risk-routes`로 분리, `worker.ts`와 중복된 헬퍼를 `env.ts` / `http.ts` / `state-clients.ts` / `kis-common.ts` / `kis-token.ts`로 통합
+- 구조: `index.ts` 단일 파일 라우터를 `query-routes` / `dry-run-routes` / `paper-routes` / `risk-routes`로 분리, 공통 헬퍼 통합
 - Worker에 `tsc --noEmit` 타입체크(`npm run check`)와 `@cloudflare/workers-types` 추가, Deploy Workflow test job에 연결
 
 ## 7. 검증 상태
@@ -164,21 +157,19 @@ DRY_RUN은 KIS reconciliation을 사용하지 않지만, **Risk Manager 자체�
 
 | 항목 | 결과 |
 |---|---|
-| Worker `npm run check` | 통과 (도입 전 14개 타입 오류) |
+| Worker `npm run check` | 통과 |
 | Worker `npm test` | 17 파일 / 86 테스트 통과 |
 | 프론트 `npm run check` / `npm run build` | 통과 |
 
-`96b0a0e`는 아직 push/배포 전이다. 배포 전 실측(2026-09-15)에서는 `OPTIONS` preflight 500, `/risk` CORS 누락, `/dry-run` `allow-origin: *`, `asOf` 항상 빈 문자열을 확인했다. 배포 후 로드맵 1순위의 실측 항목으로 재확인해야 한다.
+배포 후 실측(`c4e2db4` 기록)에서 수정된 CORS preflight / 위험검사 경로와 GitHub Pages DRY_RUN 주문 흐름을 확인했다.
 
 ## 8. 아직 남은 작업
 
 ### 최우선
 
-1. `96b0a0e` push → Deploy Workflow(check → test → deploy) 성공 확인
-2. 배포된 Worker에서 `OPTIONS` 204, `/risk`·`/dry-run` CORS 헤더, Pages UI DRY_RUN 주문 성공/멱등/kill-switch 거부 실측
-3. 내부 포지션 동기화 정책 결정 및 구현 (현재 보유종목이 있으면 reconciliation 항상 `MISMATCHED`)
-4. `dailyLoss` 산출 추가 (일일 손실 한도 실효화)
-5. PAPER 주문 안정성 검증
+1. 내부 포지션 동기화 정책 결정 및 구현 (현재 보유종목이 있으면 reconciliation이 `MISMATCHED`가 될 수 있음)
+2. `dailyLoss` 산출 추가 (일일 손실 한도 실효화)
+3. PAPER 주문 안정성 검증
 
 ### Phase 7
 
