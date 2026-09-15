@@ -2,7 +2,7 @@
 
 > 기준일: 2026-09-15
 > 기준 브랜치: `main`
-> 정리 기준 커밋: `c4e2db4` (`docs: mark DRY_RUN deployment verification complete`)
+> 정리 기준 커밋: `3e4b84d` (`docs: record explicit PAPER position sync policy`)
 
 ## 1. 프로젝트 목표
 
@@ -41,6 +41,7 @@
 - `/buyable`
 - 읽기 전용 `/orders`
 - KIS 계좌 ↔ 내부 상태 reconciliation
+- PAPER 명시적 포지션 스냅샷 동기화 `/paper/position-sync`
 
 ### 주문 도메인
 
@@ -62,26 +63,9 @@
 - GitHub Pages 주문 UI
 - Risk Manager 연결
 - Kill Switch 연결
-
-#### DRY_RUN 장외시간 문제 수정 및 배포 후 실측 완료
-
-기존 `/dry-run/orders`는 reconciliation 및 KIS 실시간 시세 조회를 먼저 수행했기 때문에 장외시간·주말에도 외부 KIS API 상태에 영향을 받을 수 있었다. 이를 분리한 뒤 배포 후 실제 Worker/Pages 환경에서 다음을 모두 검증했다.
-
-- KIS 계좌 조회하지 않음
-- KIS 주문내역 조회하지 않음
-- KIS 실시간 시세 조회하지 않음
-- reconciliation 조회하지 않음
-- 장 운영시간에 의존하지 않음
-- 요청의 `referencePrice`를 시뮬레이션 가격으로 사용
-- 현재 시각을 DRY_RUN quote timestamp로 사용해 stale quote 검사를 만족
-- Risk Manager의 주문수량/주문금액/포지션/일일한도 검사는 유지
-- Kill Switch는 계속 적용
-- DRY_RUN Durable Object에서 최종 시뮬레이션 처리
-- `OPTIONS /dry-run/orders` preflight 정상 응답 및 GitHub Pages Origin CORS 확인
-- `/risk`, `/dry-run`의 GitHub Pages Origin CORS 확인
-- 장외시간 DRY_RUN 주문 성공 확인
-- 동일 `clientOrderId` 재전송 멱등 처리 확인
-- Kill Switch 활성화 시 `KILL_SWITCH_ACTIVE` 거부 확인
+- KIS reconciliation과 완전 분리
+- 장외시간/주말 실측 검증 완료
+- 동일 `clientOrderId` 멱등성 실측 완료
 
 ### PAPER
 
@@ -93,10 +77,21 @@
 - 주문/체결 조회
 - 부분체결/취소 복구
 - 장 운영시간 처리
+- **KIS 계좌 보유수량 → 내부 포지션 명시적 동기화**
 
-현재 Worker 자체가 `LIVE` 환경이므로 PAPER 주문 전송을 실제 운영환경에서 수행하지 않는다.
+현재 Worker 자체가 `LIVE` 환경이므로 PAPER 주문/동기화 경로를 실제 운영 Worker에서 수행하지 않는다.
 
-## 4. 위험관리 상태
+## 4. 포지션 동기화 정책
+
+내부 포지션은 자동 주문 경로에서 KIS 값으로 조용히 덮어쓰지 않는다. 운영자가 명시적으로 `POST /paper/position-sync`를 호출하면 KIS `AccountSnapshot.positions`의 `symbol`과 `quantity`를 내부 Durable Object 포지션에 반영한다.
+
+- 기존 `orderRecords`와 주문 요약은 보존한다.
+- 체결 기록을 근거 없이 역산해 포지션을 추정하지 않는다.
+- 외부에서 발생한 예상치 못한 포지션 변경은 자동 주문 시 reconciliation mismatch로 감지되며 fail-closed 한다.
+- 동기화 후에도 주문 상태가 KIS와 다르면 신규주문 Gate는 열린 상태로 바뀌지 않는다.
+- DRY_RUN은 별도 가상 상태를 사용하므로 이 동기화 경로의 대상이 아니다.
+
+## 5. 위험관리 상태
 
 현재 Risk Manager에는 다음 방어 로직이 연결되어 있다.
 
@@ -104,15 +99,15 @@
 - 종목별 최대 주문금액
 - 전체 포지션 한도
 - 일일 주문 횟수 한도
-- 일일 손실 한도
+- 일일 손실 한도 필드
 - stale quote 차단
 - API 장애 차단
 - reconciliation 불일치 차단
 - Kill Switch
 
-DRY_RUN은 KIS reconciliation을 사용하지 않지만, **Risk Manager 자체의 제한과 Kill Switch는 그대로 적용**한다.
+**주의:** `dailyLoss`는 아직 실제 체결 기반으로 산출되지 않는다. 다음 단계에서 KST 거래일 기준 실현손익 계산을 연결해야 한다.
 
-## 5. LIVE / PAPER / DRY_RUN 역할 구분
+## 6. LIVE / PAPER / DRY_RUN 역할 구분
 
 | 영역 | 목적 | KIS 외부 주문 | 장시간 의존 |
 |---|---|---:|---:|
@@ -122,7 +117,15 @@ DRY_RUN은 KIS reconciliation을 사용하지 않지만, **Risk Manager 자체�
 
 핵심 원칙은 **DRY_RUN을 KIS와 분리하고, PAPER/LIVE의 안전장치를 약화시키지 않는 것**이다.
 
-## 6. 최근 변경 이력
+## 7. 최근 변경 이력
+
+### `3e4b84d` — 2026-09-15 PAPER 포지션 동기화 정책 기록
+
+- `POST /paper/position-sync` 경로 추가
+- KIS 계좌 스냅샷의 보유수량을 내부 DO에 명시적으로 반영
+- 주문 ledger 보존
+- 내부 상태 `sync-positions` 명령 및 회귀 테스트 추가
+- 자동 주문 경로에서 조용한 포지션 덮어쓰기 방지
 
 ### `c4e2db4` — 2026-09-15 DRY_RUN 배포 후 실측 완료
 
@@ -131,29 +134,14 @@ DRY_RUN은 KIS reconciliation을 사용하지 않지만, **Risk Manager 자체�
 - GitHub Pages 장외시간 DRY_RUN 주문 성공 확인
 - `clientOrderId` 멱등성 확인
 - Kill Switch 차단 확인
-- 로드맵에서 배포 후 실측 검증 항목을 완료 처리
 
 ### `96b0a0e` — 2026-09-15 버그 수정 / 리팩토링
 
-배포된 Worker를 실측해 확인한 문제와 코드 검토로 찾은 문제를 함께 수정했다.
+- CORS preflight, PAPER 위험검사, token expiry, 주문 재시도/UNKNOWN 처리, 라우터 분리, Worker 타입체크 등을 수정했다.
 
-- `OPTIONS` preflight가 body를 가진 204 응답을 만들다 500으로 실패해 GitHub Pages UI의 모든 POST가 차단되던 문제 수정 (null body 204)
-- `/risk`, `/risk/kill-switch`, `/dry-run*` DO 패스스루 응답에 `ALLOWED_ORIGIN` 기준 CORS 헤더 부착 (기존: 누락 또는 `*`)
-- `/paper/orders`가 `createdAt` 없는 요약 주문 목록을 Risk Manager에 넘겨 주문 1건 이상 존재 시 `RangeError`로 실패하던 문제 수정 (`orderRecords` 사용)
-- KIS 현재가 API는 체결시각을 주지 않아 PAPER 주문이 항상 `STALE_QUOTE`로 거부되던 문제 수정 (`fetchedAt` 도입, `asOf` 우선)
-- 토큰 만료시각(KST)을 UTC로 해석해 실제보다 9시간 늦게 만료 처리하던 문제 수정, HTTP 클라이언트/브로커의 KV 토큰 레코드 스키마 통일
-- 주문 POST가 5xx를 받으면 재전송하던 로직 제거 (중복 주문 위험). 429만 재시도
-- `UNKNOWN` 주문이 `/paper/reconcile`에서 `RECONCILING`을 거쳐 실제 상태로 복구되도록 수정 (기존: 상태 전이 위반으로 전체 resync 실패)
-- PAPER 접수 처리가 상태 머신(`SUBMITTING → SUBMITTED → ACCEPTED`)을 우회하던 부분 수정
-- 주문 요청 검증에 `side`/`orderType` 열거값 검사 추가
-- DRY_RUN 동일 `clientOrderId` 재전송 시 새 주문을 만들지 않고 기존 결과 반환
-- 프론트엔드: DRY_RUN 주문 버튼이 reconciliation 결과에 묶여 장외/보유종목 존재 시 비활성화되던 문제 수정, Kill Switch 상태 표시, 종목명/수신 시각 표시
-- 구조: `index.ts` 단일 파일 라우터를 `query-routes` / `dry-run-routes` / `paper-routes` / `risk-routes`로 분리, 공통 헬퍼 통합
-- Worker에 `tsc --noEmit` 타입체크(`npm run check`)와 `@cloudflare/workers-types` 추가, Deploy Workflow test job에 연결
+## 8. 검증 상태
 
-## 7. 검증 상태
-
-로컬 검증(`96b0a0e` 기준):
+기존 로컬 검증(`96b0a0e` 기준):
 
 | 항목 | 결과 |
 |---|---|
@@ -161,14 +149,14 @@ DRY_RUN은 KIS reconciliation을 사용하지 않지만, **Risk Manager 자체�
 | Worker `npm test` | 17 파일 / 86 테스트 통과 |
 | 프론트 `npm run check` / `npm run build` | 통과 |
 
-배포 후 실측(`c4e2db4` 기록)에서 수정된 CORS preflight / 위험검사 경로와 GitHub Pages DRY_RUN 주문 흐름을 확인했다.
+이후 포지션 동기화 로직과 회귀 테스트를 추가했으므로 최신 `main`에서는 CI/로컬 검증을 다시 통과시키는 것이 다음 검증 단계다.
 
-## 8. 아직 남은 작업
+## 9. 아직 남은 작업
 
 ### 최우선
 
-1. 내부 포지션 동기화 정책 결정 및 구현 (현재 보유종목이 있으면 reconciliation이 `MISMATCHED`가 될 수 있음)
-2. `dailyLoss` 산출 추가 (일일 손실 한도 실효화)
+1. `dailyLoss` 산출 추가 (KST 거래일 실현손익)
+2. 최신 변경 기준 Worker check/test 재검증
 3. PAPER 주문 안정성 검증
 
 ### Phase 7
@@ -190,15 +178,14 @@ DRY_RUN은 KIS reconciliation을 사용하지 않지만, **Risk Manager 자체�
 - 실계좌 매매 게이트
 - 운영 안정화 및 실거래 전 체크리스트
 
-## 9. 알려진 한계
+## 10. 알려진 한계
 
-- 내부 포지션을 KIS 계좌로 갱신하는 경로가 없다.
-- `dailyLoss`가 계산되지 않아 일일 손실 한도가 동작하지 않는다.
+- `dailyLoss`가 실제 체결 기반으로 계산되지 않아 일일 손실 한도가 아직 실효화되지 않았다.
 - PAPER 취소는 접수 응답만으로 `CANCELED` 처리하며, 취소 전 체결 경합은 자동 복구되지 않는다.
 - `market-session.ts`는 KRX 휴장일을 반영하지 않는다.
-- 자세한 내용은 `docs/design.md` §11.
+- 최신 코드의 전체 check/test 결과는 다음 검증에서 다시 확인한다.
 
-## 10. 안전 원칙
+## 11. 안전 원칙
 
 - 실제 LIVE 주문 POST는 아직 수행하지 않는다.
 - DRY_RUN 수정 때문에 LIVE/PAPER 안전장치를 약화하지 않는다.
