@@ -1,5 +1,6 @@
+import { type KISEnvironment, type KISResponseMeta, validateAccountParts } from './kis-common';
 import type { KISHttpClient } from './kis-http-client';
-import type { CreateOrderRequest, Order } from './order-domain';
+import { assertOrderRequest, transitionOrder, type CreateOrderRequest, type Order } from './order-domain';
 
 const ORDER_PATH = '/uapi/domestic-stock/v1/trading/order-cash';
 const CANCEL_PATH = '/uapi/domestic-stock/v1/trading/order-rvsecncl';
@@ -8,16 +9,13 @@ const PAPER_SELL_TR_ID = 'VTTC0011U';
 const PAPER_CANCEL_TR_ID = 'VTTC0013U';
 const EXCHANGE_ID = 'KRX';
 
-interface RawOrderResponse {
-  rt_cd?: string;
-  msg_cd?: string;
-  msg1?: string;
+type RawOrderResponse = KISResponseMeta & {
   output?: {
     KRX_FWDG_ORD_ORGNO?: string;
     ODNO?: string;
     ORD_TMD?: string;
   };
-}
+};
 
 export interface PaperOrderSubmission {
   accepted: boolean;
@@ -36,38 +34,34 @@ export interface PaperOrderCancellation {
   message?: string;
 }
 
-function validateAccount(cano: string, accountProductCode: string): void {
-  if (!/^\d{8}$/.test(cano.trim())) throw new Error('KIS account CANO must use 8 digits');
-  if (accountProductCode.trim() !== '01') throw new Error('KIS consignment account product code must be 01');
-}
-
-function validateRequest(request: CreateOrderRequest): void {
-  if (request.clientOrderId.startsWith('DRY-')) throw new Error('DRY_RUN_ORDER_NOT_ALLOWED_ON_PAPER');
-  if (!/^\d{6}$/.test(request.symbol)) throw new Error('INVALID_ORDER_SYMBOL');
-  if (!Number.isInteger(request.quantity) || request.quantity <= 0) throw new Error('INVALID_ORDER_QUANTITY');
-  if (request.orderType === 'limit' && (!Number.isFinite(request.limitPrice) || (request.limitPrice ?? 0) <= 0)) {
-    throw new Error('INVALID_LIMIT_PRICE');
-  }
-  if (request.orderType === 'market' && request.limitPrice !== undefined) throw new Error('MARKET_ORDER_PRICE_NOT_ALLOWED');
-}
-
 export class KISPaperOrderAdapter {
+  private readonly cano: string;
+  private readonly accountProductCode: string;
+
   constructor(
     private readonly client: KISHttpClient,
-    private readonly environment: 'PAPER' | 'LIVE',
-    private readonly cano: string,
-    private readonly accountProductCode: string,
-  ) {}
+    private readonly environment: KISEnvironment,
+    cano: string,
+    accountProductCode: string,
+  ) {
+    this.cano = cano.trim();
+    this.accountProductCode = accountProductCode.trim();
+  }
+
+  /** 네트워크 호출 없이 전송 가능 여부만 검증한다. 라우트가 SUBMITTING 기록 전에 호출한다 */
+  assertSubmittable(request: CreateOrderRequest): void {
+    this.assertPaperAccount();
+    assertOrderRequest(request);
+    if (request.clientOrderId.startsWith('DRY-')) throw new Error('DRY_RUN_ORDER_NOT_ALLOWED_ON_PAPER');
+  }
 
   async submit(request: CreateOrderRequest): Promise<PaperOrderSubmission> {
-    if (this.environment !== 'PAPER') throw new Error('PAPER_ORDER_REQUIRES_PAPER_ENVIRONMENT');
-    validateAccount(this.cano, this.accountProductCode);
-    validateRequest(request);
+    this.assertSubmittable(request);
 
     const isBuy = request.side === 'buy';
     const body = {
-      CANO: this.cano.trim(),
-      ACNT_PRDT_CD: this.accountProductCode.trim(),
+      CANO: this.cano,
+      ACNT_PRDT_CD: this.accountProductCode,
       PDNO: request.symbol,
       ORD_DVSN: request.orderType === 'market' ? '01' : '00',
       ORD_QTY: String(request.quantity),
@@ -102,14 +96,13 @@ export class KISPaperOrderAdapter {
   }
 
   async cancel(order: Order): Promise<PaperOrderCancellation> {
-    if (this.environment !== 'PAPER') throw new Error('PAPER_ORDER_REQUIRES_PAPER_ENVIRONMENT');
-    validateAccount(this.cano, this.accountProductCode);
+    this.assertPaperAccount();
     if (!order.brokerOrderId) throw new Error('PAPER_ORDER_BROKER_ID_REQUIRED');
     if (!order.brokerOrderOrgNo) throw new Error('PAPER_ORDER_BROKER_ORGNO_REQUIRED');
 
     const response = await this.client.postJsonResponse<RawOrderResponse>(CANCEL_PATH, {
-      CANO: this.cano.trim(),
-      ACNT_PRDT_CD: this.accountProductCode.trim(),
+      CANO: this.cano,
+      ACNT_PRDT_CD: this.accountProductCode,
       KRX_FWDG_ORD_ORGNO: order.brokerOrderOrgNo,
       ORGN_ODNO: order.brokerOrderId,
       ORD_DVSN: order.orderType === 'market' ? '01' : '00',
@@ -131,15 +124,19 @@ export class KISPaperOrderAdapter {
       message: data.msg1,
     };
   }
+
+  private assertPaperAccount(): void {
+    if (this.environment !== 'PAPER') throw new Error('PAPER_ORDER_REQUIRES_PAPER_ENVIRONMENT');
+    validateAccountParts(this.cano, this.accountProductCode);
+  }
 }
 
+/** 브로커 접수 결과를 상태 머신(SUBMITTING → SUBMITTED → ACCEPTED)을 거쳐 반영한다 */
 export function toPaperAcceptedOrder(order: Order, submission: PaperOrderSubmission): Order {
   if (!submission.accepted || !submission.brokerOrderId) throw new Error('PAPER_ORDER_NOT_ACCEPTED');
-  return {
-    ...order,
+  const submitted = order.status === 'SUBMITTING' ? transitionOrder(order, 'SUBMITTED') : order;
+  return transitionOrder(submitted, 'ACCEPTED', {
     brokerOrderId: submission.brokerOrderId,
     brokerOrderOrgNo: submission.brokerOrderOrgNo,
-    status: 'ACCEPTED',
-    updatedAt: new Date().toISOString(),
-  };
+  });
 }

@@ -140,6 +140,24 @@ DRY_RUN은 KIS reconciliation을 사용하지 않지만, **Risk Manager 자체�
 - 일회성 DRY_RUN 자동 패치 Workflow 제거
 - 실제 소스 변경이 `main`에 반영된 이후 불필요한 자동 패치 경로 제거
 
+### 2026-09-15 버그 수정 / 리팩토링 (커밋 전)
+
+배포된 Worker를 실측해 확인한 문제와 코드 검토로 찾은 문제를 함께 수정했다.
+
+- `OPTIONS` preflight가 body를 가진 204 응답을 만들다 500으로 실패해 GitHub Pages UI의 모든 POST가 차단되던 문제 수정 (null body 204)
+- `/risk`, `/risk/kill-switch`, `/dry-run*` DO 패스스루 응답에 `ALLOWED_ORIGIN` 기준 CORS 헤더 부착 (기존: 누락 또는 `*`)
+- `/paper/orders`가 `createdAt` 없는 요약 주문 목록을 Risk Manager에 넘겨 주문 1건 이상 존재 시 `RangeError`로 실패하던 문제 수정 (`orderRecords` 사용)
+- KIS 현재가 API는 체결시각을 주지 않아 PAPER 주문이 항상 `STALE_QUOTE`로 거부되던 문제 수정 (`fetchedAt` 도입, `asOf` 우선)
+- 토큰 만료시각(KST)을 UTC로 해석해 실제보다 9시간 늦게 만료 처리하던 문제 수정, HTTP 클라이언트/브로커의 KV 토큰 레코드 스키마 통일
+- 주문 POST가 5xx를 받으면 재전송하던 로직 제거 (중복 주문 위험). 429만 재시도
+- `UNKNOWN` 주문이 `/paper/reconcile`에서 `RECONCILING`을 거쳐 실제 상태로 복구되도록 수정 (기존: 상태 전이 위반으로 전체 resync 실패)
+- PAPER 접수 처리가 상태 머신(`SUBMITTING → SUBMITTED → ACCEPTED`)을 우회하던 부분 수정
+- 주문 요청 검증에 `side`/`orderType` 열거값 검사 추가 (기존: 임의 값이 PAPER에서 매도 TR로 전송될 수 있었음)
+- DRY_RUN 동일 `clientOrderId` 재전송 시 새 주문을 만들지 않고 기존 결과 반환
+- 프론트엔드: DRY_RUN 주문 버튼이 reconciliation 결과에 묶여 장외/보유종목 존재 시 비활성화되던 문제 수정, Kill Switch 상태 표시, 종목명/수신 시각 표시
+- 구조: `index.ts` 단일 파일 라우터를 `query-routes` / `dry-run-routes` / `paper-routes` / `risk-routes`로 분리, `worker.ts`와 중복된 헬퍼를 `env.ts` / `http.ts` / `state-clients.ts` / `kis-common.ts` / `kis-token.ts`로 통합
+- Worker에 `tsc --noEmit` 타입체크(`npm run check`)와 `@cloudflare/workers-types` 추가, Deploy Workflow test job에 연결
+
 ## 7. 검증 상태
 
 최근 DRY_RUN 분리 변경에 대한 Quote Worker Actions Run은 테스트 단계가 성공했고 배포 단계까지 진행되었다.

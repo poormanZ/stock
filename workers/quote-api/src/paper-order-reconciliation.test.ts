@@ -101,3 +101,21 @@ describe('resyncPaperOrders', () => {
     expect(() => resyncPaperOrders([internal], [{ ...broker, status: 'PARTIALLY_FILLED', executedQuantity: 10 }])).toThrow('INVALID_PARTIAL_FILL_QUANTITY');
   });
 });
+
+describe('resyncPaperOrders UNKNOWN recovery', () => {
+  it('recovers an UNKNOWN order through RECONCILING into the broker state', () => {
+    const unknown: Order = { ...internal, status: 'UNKNOWN' };
+    const accepted = resyncPaperOrders([unknown], [{ ...broker, status: 'ACCEPTED', executedQuantity: 0, averageExecutedPrice: 0 }]);
+    expect(accepted.updated).toBe(1);
+    expect(accepted.orders[0]).toMatchObject({ status: 'ACCEPTED', executedQuantity: 0 });
+
+    const filled = resyncPaperOrders([unknown], [broker]);
+    expect(filled.orders[0]).toMatchObject({ status: 'FILLED', executedQuantity: 10, averageExecutedPrice: 70150 });
+  });
+
+  it('returns unchanged orders by reference so callers can persist only what changed', () => {
+    const result = resyncPaperOrders([internal], [{ ...broker, status: 'ACCEPTED', executedQuantity: 0, averageExecutedPrice: 0 }]);
+    expect(result.updated).toBe(0);
+    expect(result.orders[0]).toBe(internal);
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { KISPaperOrderAdapter } from './kis-paper-order-adapter';
+import { KISPaperOrderAdapter, toPaperAcceptedOrder } from './kis-paper-order-adapter';
 import type { CreateOrderRequest, Order } from './order-domain';
 
 const request: CreateOrderRequest = {
@@ -122,5 +122,19 @@ describe('KISPaperOrderAdapter', () => {
     const adapter = new KISPaperOrderAdapter(fakeClient, 'PAPER', '1234', '01');
 
     await expect(adapter.submit(request)).rejects.toThrow('KIS account CANO must use 8 digits');
+  });
+});
+
+describe('toPaperAcceptedOrder', () => {
+  const submitting: Order = { ...order, brokerOrderId: undefined, brokerOrderOrgNo: undefined, status: 'SUBMITTING' };
+
+  it('moves SUBMITTING orders through SUBMITTED to ACCEPTED with broker identifiers', () => {
+    const accepted = toPaperAcceptedOrder(submitting, { accepted: true, brokerOrderId: '555', brokerOrderOrgNo: '00950' });
+    expect(accepted).toMatchObject({ status: 'ACCEPTED', brokerOrderId: '555', brokerOrderOrgNo: '00950' });
+  });
+
+  it('refuses to accept orders that are already terminal or not accepted by the broker', () => {
+    expect(() => toPaperAcceptedOrder({ ...submitting, status: 'REJECTED' }, { accepted: true, brokerOrderId: '555' })).toThrow('INVALID_ORDER_TRANSITION');
+    expect(() => toPaperAcceptedOrder(submitting, { accepted: false })).toThrow('PAPER_ORDER_NOT_ACCEPTED');
   });
 });

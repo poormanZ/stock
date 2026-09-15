@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDryRunState, simulateOrder } from './dry-run-simulator';
+import { createDryRunState, DryRunStateStoreDO, simulateOrder } from './dry-run-simulator';
 
 const buy = { id: 'o1', clientOrderId: 'c1', symbol: '005930', side: 'buy' as const, orderType: 'market' as const, quantity: 10 };
 
@@ -40,5 +40,35 @@ describe('dry-run simulator', () => {
   it('rejects buys without enough virtual cash and sells without enough position', () => {
     expect(() => simulateOrder(createDryRunState(1), buy, 70_000)).toThrow('INSUFFICIENT_DRY_RUN_CASH');
     expect(() => simulateOrder(createDryRunState(), { id: 'o2', clientOrderId: 'c2', symbol: '005930', side: 'sell', orderType: 'market', quantity: 1 }, 70_000)).toThrow('INSUFFICIENT_DRY_RUN_POSITION');
+  });
+});
+
+describe('DryRunStateStoreDO', () => {
+  function stateStub(): DurableObjectState {
+    let value: unknown;
+    return { storage: { get: async () => value, put: async (_key: string, next: unknown) => { value = next; } } } as unknown as DurableObjectState;
+  }
+  const command = (clientOrderId: string) => new Request('https://dry-run-state/', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'order', request: { ...buy, clientOrderId }, referencePrice: 70_000 }),
+  });
+
+  it('treats a repeated clientOrderId as idempotent instead of double-filling', async () => {
+    const store = new DryRunStateStoreDO(stateStub());
+    const first = await (await store.fetch(command('c-dup'))).json() as { order: { status: string }; cash: number };
+    const second = await (await store.fetch(command('c-dup'))).json() as { idempotent?: boolean; cash: number };
+    const state = await (await store.fetch(new Request('https://dry-run-state/'))).json() as { orders: unknown[] };
+
+    expect(first.order.status).toBe('FILLED');
+    expect(second).toMatchObject({ idempotent: true, cash: first.cash });
+    expect(state.orders).toHaveLength(1);
+  });
+
+  it('rejects malformed commands and invalid reset cash', async () => {
+    const store = new DryRunStateStoreDO(stateStub());
+    const invalid = await store.fetch(new Request('https://dry-run-state/', { method: 'POST', body: JSON.stringify({ action: 'order', request: { ...buy, side: 'hold' }, referencePrice: 1 }) }));
+    const reset = await store.fetch(new Request('https://dry-run-state/', { method: 'POST', body: JSON.stringify({ action: 'reset', initialCash: -1 }) }));
+    expect(invalid.status).toBe(400);
+    expect(await reset.json()).toEqual({ error: 'INVALID_DRY_RUN_CASH' });
   });
 });

@@ -1,139 +1,74 @@
 import { DurableObject } from 'cloudflare:workers';
-
-interface TokenCacheRecord {
-  accessToken: string;
-  expiresAt: number;
-}
+import { parseEnvironment, resolveBaseUrl } from './kis-common';
+import { isTokenUsable, type KISTokenRecord, KISTokenIssueError, requestKisToken, tokenCacheKey } from './kis-token';
 
 interface TokenBrokerEnv {
   APP_KEY: string;
   APP_SECRET: string;
-  KIS_ENVIRONMENT?: 'PAPER' | 'LIVE';
+  KIS_ENVIRONMENT?: string;
   KIS_BASE_URL?: string;
   KIS_TOKEN_CACHE: KVNamespace;
 }
 
-const LIVE_BASE_URL = 'https://openapi.koreainvestment.com:9443';
-const PAPER_BASE_URL = 'https://openapivts.koreainvestment.com:29443';
-const TOKEN_PATH = '/oauth2/tokenP';
-const TOKEN_VALIDITY_SECONDS = 24 * 60 * 60;
+const MAX_CACHE_TTL_SECONDS = 24 * 60 * 60;
+const TOKEN_TIMEOUT_MS = 8_000;
 
-type KISRejectedResponse = { msg_cd?: string; msg1?: string; rt_cd?: string };
-
-type KISTokenResponse = KISRejectedResponse & {
-  access_token?: string;
-  access_token_token_expired?: string;
-};
-
-function getBaseUrl(env: TokenBrokerEnv): string {
-  if (env.KIS_BASE_URL) return env.KIS_BASE_URL.replace(/\/$/, '');
-  return env.KIS_ENVIRONMENT === 'LIVE' ? LIVE_BASE_URL : PAPER_BASE_URL;
-}
-
-function toExpiry(value?: string): number {
-  if (!value) return Date.now() + TOKEN_VALIDITY_SECONDS * 1000;
-  const parsed = Date.parse(value.replace(' ', 'T'));
-  return Number.isFinite(parsed) ? parsed : Date.now() + TOKEN_VALIDITY_SECONDS * 1000;
-}
-
-async function readResponseBody(response: Response): Promise<KISTokenResponse> {
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TOKEN_TIMEOUT_MS);
   try {
-    const body = (await response.json()) as KISTokenResponse;
-    return body ?? {};
-  } catch {
-    return {};
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    const reason = error instanceof DOMException && error.name === 'AbortError'
+      ? 'timed out'
+      : error instanceof Error ? error.message.slice(0, 200) : 'network request failed';
+    throw new Error(`KIS token upstream request failed: ${reason}`);
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
-function rejectionMessage(status: number, body: KISTokenResponse): string {
-  const parts = [`KIS token request rejected (${status})`];
-  if (body.msg_cd) parts.push(body.msg_cd);
-  if (body.msg1) parts.push(body.msg1.slice(0, 200));
-  return parts.join(' ');
-}
-
+/** 여러 isolate의 동시 토큰 발급 요청을 한 곳으로 모아 KIS 발급 제한(1분 1회)을 넘지 않게 한다 */
 export class KISTokenBroker extends DurableObject<TokenBrokerEnv> {
-  private issuePromise: Promise<TokenCacheRecord> | null = null;
+  private issuePromise: Promise<KISTokenRecord> | null = null;
 
   async fetch(request: Request): Promise<Response> {
-    if (request.method !== 'GET' && request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
-
-    const baseUrl = getBaseUrl(this.env);
-    const key = `kis-access-token:${baseUrl}`;
+    const baseUrl = resolveBaseUrl(parseEnvironment(this.env.KIS_ENVIRONMENT), this.env.KIS_BASE_URL);
+    const key = tokenCacheKey(baseUrl);
 
     if (request.method === 'POST') {
       await this.env.KIS_TOKEN_CACHE.delete(key);
       return Response.json({ invalidated: true });
     }
+    if (request.method !== 'GET') return Response.json({ error: 'METHOD_NOT_ALLOWED' }, { status: 405 });
 
-    const cached = await this.env.KIS_TOKEN_CACHE.get<TokenCacheRecord>(key, 'json');
-    if (cached && cached.accessToken && cached.expiresAt > Date.now()) {
-      return Response.json(cached);
-    }
+    const cached = await this.env.KIS_TOKEN_CACHE.get<Partial<KISTokenRecord>>(key, 'json');
+    if (isTokenUsable(cached)) return Response.json(cached);
 
-    if (!this.issuePromise) {
-      this.issuePromise = this.issueToken(baseUrl, key).finally(() => {
-        this.issuePromise = null;
-      });
-    }
+    this.issuePromise ??= this.issueToken(baseUrl, key).finally(() => {
+      this.issuePromise = null;
+    });
 
     try {
       return Response.json(await this.issuePromise);
     } catch (error) {
-      const detail = error instanceof Error ? error : new Error('unknown error');
-      const match = detail.message.match(/^KIS token request rejected \((\d+)\)(?:\s+([A-Za-z0-9_-]+))?(?:\s+(.+))?$/);
-      if (match) {
+      if (error instanceof KISTokenIssueError) {
         return Response.json(
-          {
-            error: 'KIS_TOKEN_ISSUE_FAILED',
-            status: Number(match[1]),
-            code: match[2],
-            message: match[3]?.slice(0, 200),
-          },
+          { error: 'KIS_TOKEN_ISSUE_FAILED', status: error.status, code: error.code, message: error.message.slice(0, 200) },
           { status: 502 },
         );
       }
       return Response.json(
-        { error: 'KIS_TOKEN_ISSUE_FAILED', message: detail.message.slice(0, 200) },
+        { error: 'KIS_TOKEN_ISSUE_FAILED', message: error instanceof Error ? error.message.slice(0, 200) : 'unknown error' },
         { status: 502 },
       );
     }
   }
 
-  private async issueToken(baseUrl: string, key: string): Promise<TokenCacheRecord> {
-    let response: Response;
-    try {
-      response = await fetch(`${baseUrl}${TOKEN_PATH}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json; charset=utf-8' },
-        body: JSON.stringify({
-          grant_type: 'client_credentials',
-          appkey: this.env.APP_KEY,
-          appsecret: this.env.APP_SECRET,
-        }),
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'network request failed';
-      throw new Error(`KIS token upstream request failed: ${message.slice(0, 200)}`);
-    }
-
-    const body = await readResponseBody(response);
-    if (!response.ok || (body.rt_cd !== undefined && body.rt_cd !== '0')) {
-      throw new Error(rejectionMessage(response.status, body));
-    }
-
-    if (!body.access_token) {
-      throw new Error(rejectionMessage(response.status, body));
-    }
-
-    const record: TokenCacheRecord = {
-      accessToken: body.access_token,
-      expiresAt: toExpiry(body.access_token_token_expired),
-    };
+  private async issueToken(baseUrl: string, key: string): Promise<KISTokenRecord> {
+    const record = await requestKisToken(fetchWithTimeout, baseUrl, this.env.APP_KEY, this.env.APP_SECRET);
     const ttl = Math.max(60, Math.ceil((record.expiresAt - Date.now()) / 1000));
-    await this.env.KIS_TOKEN_CACHE.put(key, JSON.stringify(record), {
-      expirationTtl: Math.min(ttl, TOKEN_VALIDITY_SECONDS),
-    });
+    await this.env.KIS_TOKEN_CACHE.put(key, JSON.stringify(record), { expirationTtl: Math.min(ttl, MAX_CACHE_TTL_SECONDS) });
     return record;
   }
 }

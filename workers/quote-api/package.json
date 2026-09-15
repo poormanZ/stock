@@ -3,9 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "check": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260915.1",
+    "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   }
 }

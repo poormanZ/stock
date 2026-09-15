@@ -66,6 +66,7 @@ export class HttpQuoteProvider implements QuoteProvider {
           volume: quote.volume,
           marketStatus: quote.marketStatus ?? 'OPEN',
           asOf: quote.asOf,
+          fetchedAt: typeof quote.fetchedAt === 'string' ? quote.fetchedAt : undefined,
           source: quote.source,
           delayed: quote.delayed,
         };

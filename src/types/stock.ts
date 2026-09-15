@@ -11,6 +11,8 @@ export interface StockQuote {
   volume: number;
   marketStatus: MarketStatus;
   asOf: string;
+  /** Worker가 시세를 수신한 시각(ISO 8601). 샘플 데이터에는 없다 */
+  fetchedAt?: string;
   source: string;
   delayed: boolean;
 }
