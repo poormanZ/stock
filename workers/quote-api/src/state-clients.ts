@@ -1,6 +1,7 @@
 import type { DryRunState } from './dry-run-simulator';
 import { type Env, getPrimaryStore } from './env';
 import type { InternalState } from './internal-state-store';
+import type { ReconciliationPosition } from './reconciliation';
 import type { Order } from './order-domain';
 import type { KillSwitchState } from './risk-manager';
 
@@ -27,6 +28,12 @@ export function readInternalState(env: Env): Promise<InternalState> {
 export async function applyInternalOrder(env: Env, order: Order): Promise<void> {
   const response = await postJson(getPrimaryStore(env, 'INTERNAL_STATE_STORE'), INTERNAL_STATE_URL, { action: 'apply-order', order });
   if (!response.ok) throw new Error(INTERNAL_STATE_UNAVAILABLE);
+}
+
+export async function syncInternalPositions(env: Env, positions: ReconciliationPosition[]): Promise<InternalState> {
+  const response = await postJson(getPrimaryStore(env, 'INTERNAL_STATE_STORE'), INTERNAL_STATE_URL, { action: 'sync-positions', positions });
+  if (!response.ok) throw new Error(INTERNAL_STATE_UNAVAILABLE);
+  return (await response.json()) as InternalState;
 }
 
 export function fetchDryRunState(env: Env): Promise<Response> {
