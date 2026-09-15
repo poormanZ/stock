@@ -181,7 +181,8 @@ AccountSnapshot     asOf, environment, source, cash, settlementD1Cash, settlemen
 AccountPosition     symbol, name, quantity, averagePrice, currentPrice, purchaseAmount,
                     evaluationAmount, profitLossAmount, profitLossPercent
 CreateOrderRequest  id, clientOrderId, symbol, side('buy'|'sell'), orderType('market'|'limit'),
-                    quantity(정수 > 0), limitPrice?(limit일 때 필수, market일 때 금지)
+                    quantity(정수 > 0), limitPrice?(limit일 때 필수, market일 때 금지),
+                    reason?(≤200자. 전략 신호/손절/익절/manual. KIS로 전송하지 않고 내부 기록·감사 로그에만 남김)
 Order               CreateOrderRequest + brokerOrderId?, brokerOrderOrgNo?, executedQuantity,
                     averageExecutedPrice, status, createdAt, updatedAt
 OrderRecord (KIS)   brokerOrderId, originalOrderId, orderDate, symbol, name, side, orderType,
@@ -250,8 +251,22 @@ CREATED → SUBMITTING → SUBMITTED → ACCEPTED → PARTIALLY_FILLED → FILLE
 
 ## 12. 프론트엔드
 
-- `src/main.ts` 단일 파일 대시보드. `VITE_QUOTE_API_BASE_URL`이 없으면 샘플 시세 모드.
-- 사용하는 Worker 엔드포인트: `/quotes`, `/account`, `/dry-run`, `/orders`, `/reconciliation`, `/risk`, `/trading/status`, `/audit`, `/dry-run/orders`, `/dry-run/reset`, `/trading/start|stop|run`, `/risk/kill-switch`.
+```text
+src/
+  main.ts            진입점. 상태 갱신·제어 동작·렌더·이벤트 위임(data-action / data-field)
+  state.ts           AppState, 선호(자동 새로고침·이력 탭) localStorage 저장
+  api/client.ts      WorkerApi (Worker 호출 래퍼, WorkerApiError)
+  api/types.ts       Worker 응답 타입 (Worker 실제 필드명과 일치)
+  format.ts          금액/수량/시간 포맷, 상태 한글 라벨, 색 톤, 신호 사유 설명(describeReason)
+  views/*.ts         header(상태 스트립) / summary(요약 타일) / market / orderPanel / tradingPanel / account / history(탭)
+  services/          시세 Provider(HTTP·샘플), 신선도 판정(asOf 없으면 fetchedAt 기준)
+```
+
+- 화면 구성: 상단 상태 스트립(API·엔진·Kill Switch·동기화 시각·자동 새로고침) → 요약 타일 6개 → 관심종목 → 주문 시뮬레이터 + 자동매매 엔진 → 계좌 현황 → 이력 탭(DRY_RUN 주문 / 자동매매 실행 / 감사 로그 / KIS 당일 주문).
+- 이력의 DRY_RUN 주문에는 `reason`을, 자동매매 실행에는 종목별 신호·주문 결과·사유를 한글 설명으로 표시한다(예: `SMA5>SMA20` → "5일선이 20일선을 상향 돌파", `STOP_LOSS:-5.20%` → "손절 (평균단가 대비 -5.20%)").
+- 60초 자동 새로고침(탭이 보일 때만). 렌더는 전체 다시 그리기 방식이며 리스너는 루트에 한 번만 붙인다.
+- `VITE_QUOTE_API_BASE_URL`이 없으면 샘플 시세 모드.
+- 사용하는 Worker 엔드포인트: `/quotes`, `/account`, `/dry-run`, `/orders`, `/reconciliation`, `/risk`, `/trading/status`, `/audit?limit=40`, `/dry-run/orders`, `/dry-run/reset`, `/trading/start|stop|run`, `/risk/kill-switch`.
 - DRY_RUN 주문 버튼은 Kill Switch와 시세 유효성에만 의존한다. reconciliation 결과는 정보용 배지로 표시한다.
 - 자동매매 패널은 DRY_RUN 모드(관심종목, SMA 5/20)만 시작할 수 있다. PAPER/LIVE는 UI에서 시작하지 않는다.
 - 브라우저는 KIS Secret을 보유하지 않으며 KIS 주문 API를 직접 호출하지 않는다.

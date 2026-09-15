@@ -22,6 +22,8 @@ CI(`deploy-worker.yml`)는 check → test → deploy 순서로 같은 명령을 
 
 ```text
 src/                         Vite 프론트엔드 (KIS Secret·주문 API 직접 접근 금지)
+  main.ts                    진입점: 동기화·제어 동작·render·이벤트 위임(data-action/data-field)
+  state.ts / api/ / format.ts / views/*.ts   상태 · Worker 클라이언트/응답 타입 · 포맷/라벨/사유 설명 · 화면 조각
 workers/quote-api/src/
   index.ts                   라우트 디스패치 테이블. 핸들러는 두지 않는다
   worker.ts                  wrangler 진입점. re-export 전용
@@ -61,7 +63,10 @@ integration/                 실제 KIS PAPER 읽기 전용 통합 테스트 (�
 - **주문·Risk·reconciliation·긴급정지에 영향을 주는 코드에는 `appendAudit`를 남긴다.** 감사 기록 실패가 주문을 막으면 안 되므로 `appendAudit` 밖에서 새로 throw하지 않는다.
 - **새 Durable Object 클래스**는 `worker.ts` export, `wrangler.toml` 바인딩 + 새 `[[migrations]]` 태그, `env.ts` `Env`/`StateStoreBinding`, `index.test.ts`의 `makeEnv` stub을 함께 갱신한다.
 - **로그에 `APP_KEY`/`APP_SECRET`/토큰/전체 계좌번호를 남기지 않는다.** 외부 오류 메시지는 `redactSensitiveText`를 거친다.
-- 프론트엔드 API 응답 타입은 Worker의 실제 응답 필드명과 맞춘다. 필드를 바꾸면 `src/main.ts`의 타입도 함께 고친다.
+- 프론트엔드 API 응답 타입은 `src/api/types.ts` 한 곳에서 Worker의 실제 응답 필드명과 맞춘다. Worker 응답 필드를 바꾸면 이 파일을 함께 고친다.
+- 프론트 뷰는 HTML 문자열을 반환하는 순수 함수(`views/*.ts`)로 작성하고, 모든 동적 텍스트는 `esc()`를 거친다. 버튼은 `data-action`, 입력은 `data-field`로 `main.ts`의 위임 리스너에 연결한다. 뷰 안에서 `addEventListener`를 붙이지 않는다.
+- 상태 코드·사유 코드를 화면에 그대로 내보내지 않고 `format.ts`의 라벨/`describeReason`을 거친다. 새 사유 코드를 엔진에 추가하면 `describeReason`에도 설명을 추가한다.
+- 주문에 `reason`을 넣는다. 자동매매는 신호 사유, 수동 주문은 `manual`. 200자 이내.
 
 ## 테스트 작성 규칙
 

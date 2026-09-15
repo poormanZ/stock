@@ -1,263 +1,250 @@
 import './styles/global.css';
+import { WorkerApi, WorkerApiError } from './api/client';
 import { sampleStocks } from './data/sampleStocks';
 import { loadWatchlist } from './data/watchlist';
 import { SampleQuoteProvider } from './services/sampleQuoteProvider';
 import { HttpQuoteProvider, QuoteApiError } from './services/httpQuoteProvider';
 import type { QuoteProvider } from './services/quoteProvider';
+import { createState, savePrefs, selectedQuote, type HistoryTab, type MessageTone } from './state';
 import type { StockQuote } from './types/stock';
+import { renderAccount } from './views/account';
+import { renderHeader } from './views/header';
+import { renderHistory } from './views/history';
+import { renderMarket } from './views/market';
+import { renderOrderPanel } from './views/orderPanel';
+import { renderSummary } from './views/summary';
+import { renderTradingPanel } from './views/tradingPanel';
 
 const root = document.querySelector<HTMLDivElement>('#app');
 if (!root) throw new Error('Application root element was not found.');
 const app = root;
+
 const API = import.meta.env.VITE_QUOTE_API_BASE_URL?.trim() ?? '';
 const catalog = [...sampleStocks];
-const quoteProvider: QuoteProvider = API ? new HttpQuoteProvider(API) : new SampleQuoteProvider(catalog);
 const live = Boolean(API);
+const api = new WorkerApi(API);
+const quoteProvider: QuoteProvider = live ? new HttpQuoteProvider(API) : new SampleQuoteProvider(catalog);
+const state = createState(live, loadWatchlist(catalog));
 
-type AccountPosition = { symbol: string; name?: string; quantity: number; averagePrice?: number; currentPrice?: number; evaluationAmount?: number; profitLossAmount?: number; profitLossPercent?: number };
-type Account = { asOf: string; environment: string; cash: number; settlementD1Cash: number; settlementD2Cash: number; totalEquity: number; netAssetValue: number; positions: AccountPosition[] };
-type Order = { id: string; clientOrderId: string; brokerOrderId?: string; symbol: string; side: 'buy' | 'sell'; orderType: 'market' | 'limit'; quantity: number; limitPrice?: number; executedQuantity: number; averageExecutedPrice: number; status: string; createdAt: string; updatedAt: string };
-type DryRun = { cash: number; positions: { symbol: string; quantity: number; averagePrice: number }[]; orders: Order[]; updatedAt: string };
-type DryRunResult = { mode: string; idempotent?: boolean; order: Order; cash: number };
-type OrdersResponse = { asOf: string; orders: Order[] };
-type Reconciliation = { asOf?: string; status: 'MATCHED' | 'MISMATCHED'; canPlaceNewOrders: boolean; differences: { type: string; symbol?: string; brokerOrderId?: string; message: string }[] };
-type KillSwitch = { active: boolean; reason?: string; activatedAt?: string; updatedAt: string };
-type TradingRun = { id: string; trigger: string; mode: string; startedAt: string; status: string; reason?: string; signals: { symbol: string; action: string; reason: string }[]; orders: { symbol: string; side: string; quantity: number; result: string }[]; error?: { source: string; message: string } };
-type Trading = { status: 'STOPPED' | 'READY' | 'RUNNING' | 'ERROR' | 'EMERGENCY_STOP'; config: { mode: string; symbols: string[]; strategy: { id: string; params: Record<string, number> } } | null; lastRun?: TradingRun; error?: string; updatedAt: string };
-type AuditEvent = { id: string; at: string; type: string; mode: string; symbol?: string; message: string };
-type AuditLog = { count: number; events: AuditEvent[] };
+const AUTO_REFRESH_MS = 60_000;
+const AUDIT_LIMIT = 40;
+const DRY_RUN_INITIAL_CASH = 10_000_000;
 
-let stocks = loadWatchlist(catalog);
-let quotes: StockQuote[] = [];
-let account: Account | null = null;
-let dryRun: DryRun | null = null;
-let orderHistory: OrdersResponse | null = null;
-let reconciliation: Reconciliation | null = null;
-let killSwitch: KillSwitch | null = null;
-let trading: Trading | null = null;
-let audit: AuditLog | null = null;
-let selectedSymbol = stocks[0]?.symbol ?? '005930';
-let side: 'buy' | 'sell' = 'buy';
-let orderType: 'market' | 'limit' = 'limit';
-let quantity = 1;
-let limitPrice = 0;
-let message = '';
-let busy = false;
-
-const won = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 });
-const qtyFmt = new Intl.NumberFormat('ko-KR');
-const esc = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const money = (value: number) => `${won.format(Math.round(value))}원`;
-const time = (value?: string) => {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date);
-};
-
-function apiError(error: unknown): string {
-  if (error instanceof QuoteApiError) return error.code === 'KIS_RATE_LIMITED' ? 'KIS 요청 제한: 잠시 후 다시 시도하세요.' : error.code === 'KIS_TIMEOUT' ? 'KIS 응답 시간 초과입니다.' : 'API 요청에 실패했습니다.';
-  return error instanceof Error ? error.message : '요청에 실패했습니다.';
+function describeError(error: unknown): string {
+  if (error instanceof QuoteApiError) {
+    if (error.code === 'KIS_RATE_LIMITED') return 'KIS 요청 제한, 잠시 후 다시 시도하세요';
+    if (error.code === 'KIS_TIMEOUT') return 'KIS 응답 시간 초과';
+    return '시세 API 요청 실패';
+  }
+  if (error instanceof WorkerApiError) {
+    const known: Record<string, string> = {
+      KILL_SWITCH_ACTIVE: 'Kill Switch가 켜져 있어 차단됨',
+      MAX_DAILY_ORDERS: '일일 주문 횟수 한도 초과',
+      MAX_DAILY_LOSS: '일일 손실 한도 초과',
+      MAX_ORDER_AMOUNT: '1회 주문금액 한도(100만원) 초과',
+      MAX_ORDER_QUANTITY: '1회 주문수량 한도 초과',
+      MAX_POSITION_QUANTITY: '포지션 한도 초과 또는 보유 수량 부족',
+      INSUFFICIENT_DRY_RUN_CASH: '가상 현금 부족',
+      INSUFFICIENT_DRY_RUN_POSITION: '보유 수량 부족',
+      TRADING_NOT_CONFIGURED: '자동매매 설정이 없습니다',
+      EMERGENCY_STOP_ACTIVE: '긴급정지 상태입니다',
+    };
+    return known[error.code] ?? (error.message && error.message !== error.code ? `${error.code}: ${error.message}` : error.code);
+  }
+  return error instanceof Error ? error.message : '요청에 실패했습니다';
 }
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API}${path}`, { cache: 'no-store', ...init });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || body.error || `HTTP ${response.status}`);
-  return body as T;
+
+function setMessage(message: string, tone: MessageTone = 'info'): void {
+  state.message = message;
+  state.messageTone = tone;
 }
-const get = <T>(path: string) => call<T>(path);
-const post = <T>(path: string, body: unknown) => call<T>(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 /** Worker 시세에는 종목명이 없으므로 관심종목 카탈로그의 이름을 붙인다 */
-function withNames(items: StockQuote[]): StockQuote[] {
-  return items.map((quote) => ({ ...quote, name: stocks.find((s) => s.symbol === quote.symbol)?.name ?? quote.name }));
-}
-
-function selectedQuote(): StockQuote | undefined {
-  return quotes.find((q) => q.symbol === selectedSymbol);
+function withNames(quotes: StockQuote[]): StockQuote[] {
+  return quotes.map((quote) => ({ ...quote, name: state.stocks.find((s) => s.symbol === quote.symbol)?.name ?? quote.name }));
 }
 
 async function refreshAll(): Promise<void> {
-  if (!live || busy) return;
-  busy = true; message = '데이터 동기화 중…'; render();
+  if (!live || state.busy) return;
+  state.busy = true;
+  setMessage('데이터 동기화 중…');
+  render();
   const failures: string[] = [];
+  const settle = <T>(result: PromiseSettledResult<T>, label: string, apply: (value: T) => void) => {
+    if (result.status === 'fulfilled') apply(result.value);
+    else failures.push(`${label}: ${describeError(result.reason)}`);
+  };
   try {
     const [q, a, d, o, r, k, t, l] = await Promise.allSettled([
-      quoteProvider.getQuotes(stocks.map((s) => s.symbol)),
-      get<Account>('/account'),
-      get<DryRun>('/dry-run'),
-      get<OrdersResponse>('/orders'),
-      get<Reconciliation>('/reconciliation'),
-      get<KillSwitch>('/risk'),
-      get<Trading>('/trading/status'),
-      get<AuditLog>('/audit?limit=8'),
+      quoteProvider.getQuotes(state.stocks.map((s) => s.symbol)),
+      api.account(),
+      api.dryRun(),
+      api.orders(),
+      api.reconciliation(),
+      api.risk(),
+      api.tradingStatus(),
+      api.audit(AUDIT_LIMIT),
     ]);
+    settle(q, '시세', (v) => { state.quotes = withNames(v); });
+    settle(a, '계좌', (v) => { state.account = v; });
+    settle(d, 'DRY_RUN', (v) => { state.dryRun = v; });
+    settle(o, 'KIS 주문', (v) => { state.orderHistory = v; });
+    settle(r, '대조', (v) => { state.reconciliation = v; });
+    settle(k, 'Kill Switch', (v) => { state.killSwitch = v; });
+    settle(t, '자동매매', (v) => { state.trading = v; });
+    settle(l, '감사 로그', (v) => { state.audit = v; });
 
-    if (q.status === 'fulfilled') quotes = withNames(q.value); else failures.push(`시세: ${apiError(q.reason)}`);
-    if (a.status === 'fulfilled') account = a.value; else failures.push(`계좌: ${apiError(a.reason)}`);
-    if (d.status === 'fulfilled') dryRun = d.value; else failures.push(`DRY_RUN: ${apiError(d.reason)}`);
-    if (o.status === 'fulfilled') orderHistory = o.value; else failures.push(`주문이력: ${apiError(o.reason)}`);
-    if (r.status === 'fulfilled') reconciliation = r.value; else failures.push(`RECONCILIATION: ${apiError(r.reason)}`);
-    if (k.status === 'fulfilled') killSwitch = k.value; else failures.push(`KILL SWITCH: ${apiError(k.reason)}`);
-    if (t.status === 'fulfilled') trading = t.value; else failures.push(`자동매매: ${apiError(t.reason)}`);
-    if (l.status === 'fulfilled') audit = l.value; else failures.push(`감사로그: ${apiError(l.reason)}`);
-
-    if (!quotes.some((qv) => qv.symbol === selectedSymbol)) selectedSymbol = quotes[0]?.symbol ?? selectedSymbol;
-    const selected = selectedQuote();
-    if (selected && !limitPrice) limitPrice = selected.price;
-    message = failures.length ? `동기화 부분 실패 · ${failures.join(' / ')}` : 'LIVE 데이터 동기화 완료';
+    if (!state.quotes.some((quote) => quote.symbol === state.selectedSymbol)) state.selectedSymbol = state.quotes[0]?.symbol ?? state.selectedSymbol;
+    const selected = selectedQuote(state);
+    if (selected && !state.limitPrice) state.limitPrice = selected.price;
+    state.failures = failures;
+    state.lastSync = new Date().toISOString();
+    setMessage(failures.length ? '일부 데이터 동기화 실패' : '동기화 완료', failures.length ? 'bad' : 'ok');
   } finally {
-    busy = false;
+    state.busy = false;
     render();
   }
 }
 
-async function refreshDryRun(): Promise<void> {
-  if (!live) return;
-  try { dryRun = await get<DryRun>('/dry-run'); } catch (error) { message = apiError(error); }
+/** 제어 동작 이후에는 상태·감사 로그만 빠르게 다시 읽는다 */
+async function refreshControlState(): Promise<void> {
+  const [d, k, t, l] = await Promise.allSettled([api.dryRun(), api.risk(), api.tradingStatus(), api.audit(AUDIT_LIMIT)]);
+  if (d.status === 'fulfilled') state.dryRun = d.value;
+  if (k.status === 'fulfilled') state.killSwitch = k.value;
+  if (t.status === 'fulfilled') state.trading = t.value;
+  if (l.status === 'fulfilled') state.audit = l.value;
+}
+
+async function control(label: string, action: () => Promise<string | void>, confirmText?: string): Promise<void> {
+  if (!live || state.busy) return;
+  if (confirmText && !confirm(confirmText)) return;
+  state.busy = true;
+  setMessage(`${label} 처리 중…`);
   render();
+  try {
+    const detail = await action();
+    setMessage(detail ? `${label} 완료 · ${detail}` : `${label} 완료`, 'ok');
+  } catch (error) {
+    setMessage(`${label} 실패 · ${describeError(error)}`, 'bad');
+  } finally {
+    await refreshControlState();
+    state.busy = false;
+    render();
+  }
 }
 
 async function submitDryRun(): Promise<void> {
-  if (!live || busy) return;
-  const referencePrice = selectedQuote()?.price ?? 0;
-  if (!Number.isFinite(referencePrice) || referencePrice <= 0) { message = '선택 종목의 유효한 시세가 필요합니다.'; render(); return; }
+  const quote = selectedQuote(state);
+  const referencePrice = quote?.price ?? 0;
+  if (!Number.isFinite(referencePrice) || referencePrice <= 0) {
+    setMessage('선택 종목의 유효한 시세가 필요합니다', 'bad');
+    render();
+    return;
+  }
   const request: Record<string, unknown> = {
     id: crypto.randomUUID(),
     clientOrderId: `DRY-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    symbol: selectedSymbol,
-    side,
-    orderType,
-    quantity,
+    symbol: state.selectedSymbol,
+    side: state.side,
+    orderType: state.orderType,
+    quantity: state.quantity,
+    reason: 'manual',
   };
-  if (orderType === 'limit') request.limitPrice = limitPrice || referencePrice;
-  busy = true; message = 'DRY_RUN 주문 처리 중…'; render();
-  try {
-    const result = await post<DryRunResult>('/dry-run/orders', { request, referencePrice });
-    message = `DRY_RUN ${result.order.status} · ${selectedSymbol} ${qtyFmt.format(result.order.executedQuantity)}/${qtyFmt.format(result.order.quantity)}주`;
-    await refreshDryRun();
-  } catch (error) { message = apiError(error); }
-  finally { busy = false; render(); }
+  if (state.orderType === 'limit') request.limitPrice = state.limitPrice || referencePrice;
+  await control(`DRY_RUN ${state.side === 'buy' ? '매수' : '매도'}`, async () => {
+    const result = await api.placeDryRunOrder({ request, referencePrice });
+    const status = result.order.status === 'FILLED' ? '체결' : result.order.status === 'PARTIALLY_FILLED' ? '부분체결' : '접수(미체결)';
+    return `${state.selectedSymbol} ${result.order.executedQuantity}/${result.order.quantity}주 ${status}${result.executedPrice ? ` @ ${Math.round(result.executedPrice).toLocaleString('ko-KR')}원` : ''}`;
+  });
 }
 
-async function resetDryRun(): Promise<void> {
-  if (!live || busy || !confirm('DRY_RUN 상태를 1,000만원으로 초기화할까요?')) return;
-  try { dryRun = await post<DryRun>('/dry-run/reset', { initialCash: 10_000_000 }); message = 'DRY_RUN 초기화 완료'; } catch (error) { message = apiError(error); }
+const resetDryRun = () => control('DRY_RUN 초기화', async () => { await api.resetDryRun(DRY_RUN_INITIAL_CASH); }, 'DRY_RUN 가상 계좌를 1,000만원으로 초기화할까요? 주문 이력도 지워집니다.');
+
+const startTrading = () => control('자동매매 시작', async () => {
+  const symbols = state.stocks.map((s) => s.symbol).slice(0, 10);
+  // 설정이 없거나 종목이 바뀐 경우에만 새 설정을 보낸다. ERROR/EMERGENCY_STOP 재시작은 기존 설정을 유지한다
+  const current = state.trading?.config;
+  const sameConfig = current && current.mode === 'DRY_RUN' && current.symbols.join() === symbols.join();
+  await api.startTrading(sameConfig ? undefined : { mode: 'DRY_RUN', symbols, strategy: { id: 'sma-crossover', params: { fast: 5, slow: 20 } }, candleBars: 60 });
+}, state.trading?.status === 'EMERGENCY_STOP' || state.trading?.status === 'ERROR'
+  ? '엔진을 다시 시작할까요? 원인이 해소되었는지 감사 로그에서 확인하세요.'
+  : `관심종목 ${Math.min(state.stocks.length, 10)}개를 DRY_RUN 자동매매(SMA 5/20)로 시작할까요? 5분마다 KIS 시세로 평가하고 가상 주문만 냅니다.`);
+
+const stopTrading = () => control('자동매매 정지', async () => { await api.stopTrading(); });
+const runTradingNow = () => control('수동 1회 실행', async () => {
+  const result = await api.runTrading() as { ran: boolean; reason?: string; run?: { status: string; orders: unknown[] } };
+  return result.ran ? `${result.run?.status} · 주문 ${result.run?.orders.length ?? 0}건` : `건너뜀 (${result.reason})`;
+});
+
+const toggleKillSwitch = () => {
+  const activate = !state.killSwitch?.active;
+  return control(activate ? 'Kill Switch 활성화' : 'Kill Switch 해제', async () => { await api.setKillSwitch(activate, 'dashboard'); },
+    activate ? '모든 신규 주문을 즉시 차단하고 자동매매를 긴급정지로 전환합니다. 계속할까요?' : 'Kill Switch를 해제할까요? 자동매매는 별도로 다시 시작해야 합니다.');
+};
+
+function selectSymbol(symbol: string): void {
+  state.selectedSymbol = symbol;
+  state.limitPrice = selectedQuote(state)?.price ?? state.limitPrice;
   render();
 }
 
-async function refreshControl(): Promise<void> {
-  const [t, l, k] = await Promise.allSettled([get<Trading>('/trading/status'), get<AuditLog>('/audit?limit=8'), get<KillSwitch>('/risk')]);
-  if (t.status === 'fulfilled') trading = t.value;
-  if (l.status === 'fulfilled') audit = l.value;
-  if (k.status === 'fulfilled') killSwitch = k.value;
-}
-
-async function control(label: string, action: () => Promise<unknown>, confirmText?: string): Promise<void> {
-  if (!live || busy || (confirmText && !confirm(confirmText))) return;
-  busy = true; message = `${label} 처리 중…`; render();
-  try { await action(); message = `${label} 완료`; } catch (error) { message = `${label} 실패: ${apiError(error)}`; }
-  finally { await refreshControl(); busy = false; render(); }
-}
-
-/** 관심종목 전체를 SMA 교차 전략 DRY_RUN으로 설정하고 시작한다. PAPER/LIVE는 UI에서 시작하지 않는다 */
-const startDryRunTrading = () => control('자동매매 시작', () => post('/trading/start', {
-  config: { mode: 'DRY_RUN', symbols: stocks.map((s) => s.symbol).slice(0, 10), strategy: { id: 'sma-crossover', params: { fast: 5, slow: 20 } }, candleBars: 60 },
-}), `관심종목 ${Math.min(stocks.length, 10)}개를 DRY_RUN 자동매매(SMA 5/20)로 시작할까요? 5분마다 KIS 시세로 평가하고 가상 주문만 냅니다.`);
-const stopTrading = () => control('자동매매 정지', () => post('/trading/stop', {}));
-const runTradingNow = () => control('수동 1회 실행', () => post('/trading/run', {}));
-const toggleKillSwitch = () => {
-  const activate = !killSwitch?.active;
-  return control(activate ? 'KILL SWITCH 활성화' : 'KILL SWITCH 해제', () => post('/risk/kill-switch', activate ? { action: 'activate', reason: 'dashboard' } : { action: 'deactivate' }),
-    activate ? '모든 신규 주문을 즉시 차단하고 자동매매를 EMERGENCY_STOP으로 전환합니다. 계속할까요?' : 'Kill Switch를 해제할까요? 자동매매는 별도로 다시 시작해야 합니다.');
-};
-
-function positionRows(): string {
-  if (!account?.positions.length) return '<tr><td colspan="5" class="empty">국내 보유 종목이 없습니다.</td></tr>';
-  return account.positions.map((p) => `<tr><td>${esc(p.name || p.symbol)}</td><td>${p.symbol}</td><td>${qtyFmt.format(p.quantity)}</td><td>${money(p.averagePrice ?? 0)}</td><td>${money(p.evaluationAmount ?? 0)}</td></tr>`).join('');
-}
-function dryPositionRows(): string {
-  if (!dryRun?.positions.length) return '<tr><td colspan="4" class="empty">DRY_RUN 보유 종목이 없습니다.</td></tr>';
-  return dryRun.positions.map((p) => `<tr><td>${p.symbol}</td><td>${qtyFmt.format(p.quantity)}</td><td>${money(p.averagePrice)}</td><td>${money(p.quantity * p.averagePrice)}</td></tr>`).join('');
-}
-function orderRows(): string {
-  const rows = [...(dryRun?.orders ?? [])].reverse().slice(0, 8);
-  if (!rows.length) return '<tr><td colspan="6" class="empty">DRY_RUN 주문 이력이 없습니다.</td></tr>';
-  return rows.map((o) => `<tr><td>${time(o.createdAt)}</td><td>${o.side === 'buy' ? '매수' : '매도'}</td><td>${o.symbol}</td><td>${o.orderType === 'limit' ? '지정가' : '시장가'}</td><td>${qtyFmt.format(o.executedQuantity)}/${qtyFmt.format(o.quantity)}</td><td><span class="status-pill">${esc(o.status)}</span></td></tr>`).join('');
-}
-
-function tradingPanel(): string {
-  const status = trading?.status ?? '—';
-  const tone = status === 'RUNNING' ? 'ok' : status === 'ERROR' || status === 'EMERGENCY_STOP' ? 'blocked' : '';
-  const cfg = trading?.config;
-  const last = trading?.lastRun;
-  const lastText = last
-    ? `${time(last.startedAt)} · ${last.trigger} · ${esc(last.status)}${last.reason ? ` (${esc(last.reason)})` : ''}${last.error ? ` · ${esc(last.error.source)}: ${esc(last.error.message)}` : ''} · 신호 ${last.signals.filter((sg) => sg.action !== 'hold').length} · 주문 ${last.orders.length}`
-    : '실행 이력 없음';
-  // EMERGENCY_STOP은 Kill Switch가 해제된 뒤에만 다시 시작할 수 있다
-  const canStart = live && !busy && status !== 'RUNNING' && !killSwitch?.active;
-  return `<div class="panel"><div class="section-title"><div><p class="eyebrow">AUTO TRADING / ${esc(cfg?.mode ?? 'DRY_RUN')}</p><h2>자동매매 엔진</h2></div><span class="gate ${tone}">${esc(status)}</span></div>
-    <div class="order-preview"><span>전략 <b>${cfg ? `${esc(cfg.strategy.id)} ${esc(JSON.stringify(cfg.strategy.params))}` : '—'}</b></span><span>종목 <b>${cfg ? esc(cfg.symbols.join(', ')) : '—'}</b></span><span>최근 실행 <b>${lastText}</b></span>${trading?.error ? `<span>오류 <b>${esc(trading.error)}</b></span>` : ''}</div>
-    <div class="segmented"><button id="trading-start" ${canStart ? '' : 'disabled'}>${status === 'EMERGENCY_STOP' ? 'EMERGENCY_STOP 해제 후 재시작' : status === 'ERROR' ? 'ERROR 확인 후 재시작' : 'DRY_RUN 시작'}</button><button id="trading-stop" ${live && !busy && status === 'RUNNING' ? '' : 'disabled'}>정지</button></div>
-    <div class="segmented"><button id="trading-run" ${live && !busy && status === 'RUNNING' ? '' : 'disabled'}>지금 1회 실행</button><button id="kill-switch" class="${killSwitch?.active ? '' : 'active'}" ${live && !busy ? '' : 'disabled'}>${killSwitch?.active ? 'KILL SWITCH 해제' : 'KILL SWITCH'}</button></div>
-    <p class="message">${status === 'EMERGENCY_STOP' && killSwitch?.active ? 'Kill Switch를 먼저 해제해야 재시작할 수 있습니다. ' : ''}PAPER/LIVE 자동 실행은 대시보드에서 시작하지 않습니다. 스케줄은 KST 평일 09:00~15:59 5분 간격입니다.</p></div>`;
-}
-
-function auditRows(): string {
-  const rows = audit?.events ?? [];
-  if (!rows.length) return '<tr><td colspan="4" class="empty">감사 이벤트가 없습니다.</td></tr>';
-  return rows.map((e) => `<tr><td>${time(e.at)}</td><td><span class="status-pill">${esc(e.type)}</span></td><td>${esc(e.mode)}${e.symbol ? ` · ${esc(e.symbol)}` : ''}</td><td class="wrap">${esc(e.message)}</td></tr>`).join('');
-}
-
-function reconciliationBadge(): string {
-  if (!reconciliation) return '<span class="gate">RECON —</span>';
-  const ok = reconciliation.canPlaceNewOrders;
-  const detail = ok ? '' : ` · ${reconciliation.differences.length}건 불일치`;
-  return `<span class="gate ${ok ? 'ok' : 'blocked'}" title="KIS 계좌/주문과 내부 상태 대조 결과. PAPER/LIVE 주문에만 적용되며 DRY_RUN은 차단하지 않습니다.">RECON ${ok ? 'MATCHED' : 'MISMATCHED'}${detail}</span>`;
+function persistPrefs(): void {
+  savePrefs({ autoRefresh: state.autoRefresh, historyTab: state.historyTab });
 }
 
 function render(): void {
-  const selected = selectedQuote();
-  const killed = killSwitch?.active === true;
-  const canSubmit = live && !busy && !killed && Boolean(selected);
-  const marketCards = quotes.length
-    ? quotes.map((q) => `<button class="quote-card ${q.symbol === selectedSymbol ? 'selected' : ''}" data-select="${q.symbol}"><div><b>${esc(q.name)}</b><small>${q.symbol} · ${q.market}${q.fetchedAt ? ` · 수신 ${time(q.fetchedAt)}` : ''}</small></div><strong>${money(q.price)}</strong><span class="change ${q.change >= 0 ? 'up' : 'down'}">${q.change >= 0 ? '+' : ''}${won.format(q.change)} (${q.changePercent >= 0 ? '+' : ''}${q.changePercent.toFixed(2)}%)</span></button>`).join('')
-    : '<div class="empty-box">시세 데이터가 없습니다.</div>';
-  const options = stocks.map((s) => `<option value="${s.symbol}" ${s.symbol === selectedSymbol ? 'selected' : ''}>${esc(s.name)} (${s.symbol})</option>`).join('');
-  const previewPrice = orderType === 'limit' ? (limitPrice || selected?.price || 0) : (selected?.price ?? 0);
   app.innerHTML = `<main class="shell">
-    <header class="topbar"><div><p class="eyebrow">KIS / AUTO TRADING CONSOLE</p><h1>STOCK CONTROL</h1><p class="sub">시세 · 계좌 · DRY_RUN 주문 통합 대시보드</p></div><div class="top-actions"><span class="mode ${live ? 'live' : ''}">${live ? '● LIVE API' : '○ SAMPLE MODE'}</span>${killed ? '<span class="mode blocked">■ KILL SWITCH ON</span>' : ''}<button id="refresh" class="btn">${busy ? 'SYNC…' : '↻ SYNC'}</button></div></header>
-    ${!live ? '<div class="notice">VITE_QUOTE_API_BASE_URL이 없어 샘플 시세 모드입니다. GitHub Pages 배포에서는 production 환경변수를 사용합니다.</div>' : ''}
-    ${killed ? `<div class="notice">Kill Switch가 활성화되어 모든 신규 주문이 차단됩니다.${killSwitch?.reason ? ` 사유: ${esc(killSwitch.reason)}` : ''}</div>` : ''}
-    <section class="quotes"><div class="section-title"><div><p class="eyebrow">MARKET</p><h2>관심종목</h2></div><span>선택 종목을 주문 패널에서 사용</span></div><div class="quote-grid">${marketCards}</div></section>
-    <section class="layout-grid">
-      <div class="panel account"><div class="section-title"><div><p class="eyebrow">ACCOUNT / ${esc(account?.environment ?? 'LIVE')}</p><h2>계좌 현황</h2></div><span>${account ? time(account.asOf) : '—'} ${reconciliationBadge()}</span></div><div class="metric-grid"><div><small>국내 주문가능 현금</small><b>${account ? money(account.cash) : '—'}</b></div><div><small>총 평가/순자산</small><b>${account ? money(account.totalEquity || account.netAssetValue) : '—'}</b></div><div><small>정산 D+1</small><b>${account ? money(account.settlementD1Cash) : '—'}</b></div><div><small>정산 D+2</small><b>${account ? money(account.settlementD2Cash) : '—'}</b></div></div><div class="table-wrap"><table><thead><tr><th>종목</th><th>코드</th><th>수량</th><th>평균단가</th><th>평가금액</th></tr></thead><tbody>${positionRows()}</tbody></table></div></div>
-      <div class="panel order-panel"><div class="section-title"><div><p class="eyebrow">DRY_RUN</p><h2>주문 시뮬레이터</h2></div><span class="gate ${killed ? 'blocked' : 'ok'}">${killed ? 'KILL SWITCH' : 'RISK MANAGER 적용'}</span></div><label>종목<select id="symbol">${options}</select></label><div class="segmented"><button data-side="buy" class="${side === 'buy' ? 'active' : ''}">매수</button><button data-side="sell" class="${side === 'sell' ? 'active' : ''}">매도</button></div><div class="segmented"><button data-type="limit" class="${orderType === 'limit' ? 'active' : ''}">지정가</button><button data-type="market" class="${orderType === 'market' ? 'active' : ''}">시장가</button></div><div class="form-grid"><label>수량<input id="quantity" type="number" min="1" step="1" value="${quantity}"></label><label>가격<input id="limit-price" type="number" min="1" step="1" value="${limitPrice || selected?.price || 0}" ${orderType === 'market' ? 'disabled' : ''}></label></div><div class="order-preview"><span>기준 시세 <b>${selected ? money(selected.price) : '—'}</b></span><span>예상 주문금액 <b>${selected ? money(previewPrice * quantity) : '—'}</b></span></div><button id="submit-order" class="primary" ${canSubmit ? '' : 'disabled'}>${killed ? 'KILL SWITCH · 주문 차단' : 'DRY_RUN 주문 실행'}</button><button id="reset-dry" class="btn ghost" ${busy ? 'disabled' : ''}>DRY_RUN 1,000만원 초기화</button><p class="message" role="status">${esc(message)}</p></div>
-    </section>
-    <section class="layout-grid lower"><div class="panel"><div class="section-title"><div><p class="eyebrow">DRY_RUN STATE</p><h2>가상 포지션</h2></div><b class="cash">${dryRun ? money(dryRun.cash) : '—'}</b></div><div class="table-wrap"><table><thead><tr><th>코드</th><th>수량</th><th>평균단가</th><th>평가 기준금액</th></tr></thead><tbody>${dryPositionRows()}</tbody></table></div></div><div class="panel"><div class="section-title"><div><p class="eyebrow">ORDER LOG</p><h2>DRY_RUN 주문 이력</h2></div><span>최근 8건${orderHistory ? ` · KIS 당일 주문 ${orderHistory.orders.length}건` : ''}</span></div><div class="table-wrap"><table><thead><tr><th>시간</th><th>구분</th><th>코드</th><th>유형</th><th>체결</th><th>상태</th></tr></thead><tbody>${orderRows()}</tbody></table></div></div></section>
-    <section class="layout-grid lower">${tradingPanel()}<div class="panel"><div class="section-title"><div><p class="eyebrow">AUDIT LOG</p><h2>최근 감사 이벤트</h2></div><span>${audit ? `총 ${audit.count}건` : '—'}</span></div><div class="table-wrap"><table><thead><tr><th>시간</th><th>유형</th><th>모드</th><th>내용</th></tr></thead><tbody>${auditRows()}</tbody></table></div></div></section>
+    ${renderHeader(state)}
+    ${!live ? '<div class="notice">VITE_QUOTE_API_BASE_URL이 없어 샘플 시세 모드입니다. 주문·자동매매 제어는 비활성화됩니다.</div>' : ''}
+    ${state.killSwitch?.active ? `<div class="notice danger">Kill Switch가 활성화되어 모든 신규 주문이 차단됩니다.${state.killSwitch.reason ? ` 사유: ${state.killSwitch.reason}` : ''} 자동매매 엔진은 다음 사이클에 긴급정지로 전환됩니다.</div>` : ''}
+    ${renderSummary(state)}
+    ${renderMarket(state)}
+    <section class="layout-grid">${renderOrderPanel(state)}${renderTradingPanel(state)}</section>
+    ${renderAccount(state)}
+    ${renderHistory(state)}
     <footer><span>대시보드는 DRY_RUN 주문과 자동매매 제어만 수행하며 실계좌 주문 API를 호출하지 않습니다.</span><span>Kill Switch → Risk Manager → DRY_RUN Engine</span></footer>
   </main>`;
-
-  document.querySelector<HTMLButtonElement>('#refresh')?.addEventListener('click', () => void refreshAll());
-  document.querySelector<HTMLButtonElement>('#submit-order')?.addEventListener('click', () => void submitDryRun());
-  document.querySelector<HTMLButtonElement>('#reset-dry')?.addEventListener('click', () => void resetDryRun());
-  document.querySelector<HTMLButtonElement>('#trading-start')?.addEventListener('click', () => void startDryRunTrading());
-  document.querySelector<HTMLButtonElement>('#trading-stop')?.addEventListener('click', () => void stopTrading());
-  document.querySelector<HTMLButtonElement>('#trading-run')?.addEventListener('click', () => void runTradingNow());
-  document.querySelector<HTMLButtonElement>('#kill-switch')?.addEventListener('click', () => void toggleKillSwitch());
-  document.querySelector<HTMLSelectElement>('#symbol')?.addEventListener('change', (e) => selectSymbol((e.target as HTMLSelectElement).value));
-  document.querySelector<HTMLInputElement>('#quantity')?.addEventListener('input', (e) => { quantity = Math.max(1, Math.trunc(Number((e.target as HTMLInputElement).value)) || 1); });
-  document.querySelector<HTMLInputElement>('#limit-price')?.addEventListener('input', (e) => { limitPrice = Math.max(1, Number((e.target as HTMLInputElement).value) || 1); });
-  document.querySelectorAll<HTMLButtonElement>('[data-side]').forEach((b) => b.addEventListener('click', () => { side = b.dataset.side as 'buy' | 'sell'; render(); }));
-  document.querySelectorAll<HTMLButtonElement>('[data-type]').forEach((b) => b.addEventListener('click', () => { orderType = b.dataset.type as 'market' | 'limit'; render(); }));
-  document.querySelectorAll<HTMLButtonElement>('[data-select]').forEach((b) => b.addEventListener('click', () => selectSymbol(b.dataset.select!)));
 }
 
-function selectSymbol(symbol: string): void {
-  selectedSymbol = symbol;
-  limitPrice = selectedQuote()?.price ?? limitPrice;
-  render();
-}
+/** 버튼은 data-action, 입력은 data-field로 위임 처리한다. 렌더마다 리스너를 다시 붙이지 않는다 */
+app.addEventListener('click', (event) => {
+  const target = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
+  if (!target || (target instanceof HTMLButtonElement && target.disabled)) return;
+  const arg = target.dataset.arg ?? '';
+  switch (target.dataset.action) {
+    case 'sync': void refreshAll(); break;
+    case 'toggle-auto': state.autoRefresh = !state.autoRefresh; persistPrefs(); render(); break;
+    case 'select-symbol': selectSymbol(arg); break;
+    case 'side': state.side = arg as 'buy' | 'sell'; render(); break;
+    case 'type': state.orderType = arg as 'market' | 'limit'; render(); break;
+    case 'submit-order': void submitDryRun(); break;
+    case 'reset-dry': void resetDryRun(); break;
+    case 'trading-start': void startTrading(); break;
+    case 'trading-stop': void stopTrading(); break;
+    case 'trading-run': void runTradingNow(); break;
+    case 'kill-switch': void toggleKillSwitch(); break;
+    case 'tab': state.historyTab = arg as HistoryTab; persistPrefs(); render(); break;
+    case 'toggle-run': state.expandedRunId = state.expandedRunId === arg ? null : arg; render(); break;
+    default: break;
+  }
+});
+
+app.addEventListener('input', (event) => {
+  const target = event.target as HTMLInputElement;
+  if (target.dataset.field === 'quantity') state.quantity = Math.max(1, Math.trunc(Number(target.value)) || 1);
+  if (target.dataset.field === 'limit-price') state.limitPrice = Math.max(1, Number(target.value) || 1);
+});
+
+app.addEventListener('change', (event) => {
+  const target = event.target as HTMLSelectElement;
+  if (target.dataset.field === 'symbol') selectSymbol(target.value);
+  // 수량·가격 입력은 포커스를 잃을 때만 미리보기를 다시 그린다
+  if (target.dataset.field === 'quantity' || target.dataset.field === 'limit-price') render();
+});
+
+setInterval(() => {
+  if (live && state.autoRefresh && !state.busy && document.visibilityState === 'visible') void refreshAll();
+}, AUTO_REFRESH_MS);
 
 render();
 if (live) void refreshAll();

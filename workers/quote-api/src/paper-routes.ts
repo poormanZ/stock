@@ -113,7 +113,7 @@ export async function placeCashOrder(env: Env, { mode, adapter, source }: CashOr
 
     order = transitionOrder(createOrder(orderRequest, now), 'SUBMITTING');
     await applyInternalOrder(env, order);
-    await appendAudit(env, { ...auditBase, type: 'ORDER_SUBMITTED', message: `${source} ${mode} ${orderRequest.side} ${orderRequest.symbol} x${orderRequest.quantity} ${orderRequest.orderType}`, details: { limitPrice: orderRequest.limitPrice, referencePrice } });
+    await appendAudit(env, { ...auditBase, type: 'ORDER_SUBMITTED', message: `${source} ${mode} ${orderRequest.side} ${orderRequest.symbol} x${orderRequest.quantity} ${orderRequest.orderType}${orderRequest.reason ? ` · ${orderRequest.reason}` : ''}`, details: { limitPrice: orderRequest.limitPrice, referencePrice } });
   } catch (error) {
     return { status: 'ERROR', error };
   }

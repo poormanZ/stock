@@ -1,1 +1,177 @@
-:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#e2e8f0;background:#06090d;font-synthesis:none;text-rendering:optimizeLegibility}*{box-sizing:border-box}body{margin:0;min-width:320px;background:radial-gradient(circle at 50% -10%,#111a25 0,#06090d 45%)}button,input,select{font:inherit}button{cursor:pointer}.shell{width:min(1400px,calc(100% - 32px));margin:auto;padding:28px 0 44px}.topbar{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;padding-bottom:22px;border-bottom:1px solid #1b2530}.eyebrow{margin:0 0 7px;color:#67e8f9;font:800 10px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.16em}h1,h2,h3,p{margin-top:0}h1{margin-bottom:7px;font-size:clamp(30px,4vw,46px);letter-spacing:-.04em}h2{margin:0;font-size:22px} .sub{margin:0;color:#64748b;font-size:12px}.top-actions{display:flex;align-items:center;gap:10px}.mode,.gate,.status-pill{display:inline-flex;align-items:center;border:1px solid #293544;border-radius:999px;padding:7px 10px;color:#94a3b8;font:800 9px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em}.mode.live{color:#86efac}.mode.blocked{color:#fca5a5;border-color:#5c2b35}.btn{border:1px solid #334155;border-radius:8px;padding:9px 13px;color:#e2e8f0;background:#0e151d;font-size:11px;font-weight:800}.btn:hover{border-color:#67e8f9}.btn:disabled,.primary:disabled{opacity:.45;cursor:not-allowed}.notice{margin:18px 0;padding:12px 14px;border:1px solid #4b3b1d;border-radius:9px;background:#171207;color:#fbbf24;font-size:11px}.quotes,.panel{border:1px solid #1c2733;border-radius:12px;background:linear-gradient(180deg,#0d141c,#0a1017);box-shadow:0 16px 40px #0004}.quotes{margin-top:22px;padding:18px}.section-title{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:14px}.section-title>span{color:#64748b;font:10px ui-monospace,SFMono-Regular,Menlo,monospace}.quote-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}.quote-card{min-width:0;text-align:left;padding:13px;border:1px solid #202c38;border-radius:9px;background:#0a1016;color:#e2e8f0}.quote-card:hover,.quote-card.selected{border-color:#3a6a76;background:#0c151b}.quote-card>div{display:flex;flex-direction:column;gap:3px}.quote-card small{color:#64748b;font:9px ui-monospace,SFMono-Regular,Menlo,monospace}.quote-card strong{display:block;margin-top:15px;font-size:17px}.change{display:block;margin-top:4px;font-size:10px}.up{color:#4ade80}.down{color:#fb7185}.layout-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(340px,1fr);gap:14px;margin-top:14px}.panel{padding:18px}.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}.metric-grid>div{padding:12px;border:1px solid #1e2935;border-radius:8px;background:#080e14}.metric-grid small{display:block;color:#64748b;font-size:9px;margin-bottom:7px}.metric-grid b{font-size:16px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:500px}th,td{padding:10px 8px;border-top:1px solid #17212c;text-align:right;font-size:10px;white-space:nowrap}th{color:#475569;font:800 8px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em}th:first-child,td:first-child{text-align:left}td.wrap{white-space:normal;text-align:left;max-width:420px}.empty{text-align:center!important;color:#475569;padding:22px}.order-panel label{display:block;color:#64748b;font-size:10px;margin-bottom:10px}.order-panel select,.order-panel input{display:block;width:100%;margin-top:6px;padding:10px 11px;border:1px solid #263442;border-radius:7px;outline:none;color:#e2e8f0;background:#080e14;font-size:12px}.order-panel select:focus,.order-panel input:focus{border-color:#67e8f9}.segmented{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}.segmented button{padding:9px;border:1px solid #263442;border-radius:7px;color:#94a3b8;background:#080e14;font-size:11px;font-weight:800}.segmented button.active{border-color:#67e8f9;color:#e0f2fe;background:#0d1a21}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.order-preview{margin:13px 0;padding:11px;border:1px solid #1d2935;border-radius:8px;background:#080e14}.order-preview span{display:flex;justify-content:space-between;padding:4px 0;color:#64748b;font-size:10px}.order-preview b{color:#cbd5e1}.primary{width:100%;padding:12px;border:1px solid #34d399;border-radius:8px;color:#d1fae5;background:#0b211a;font-size:11px;font-weight:900}.ghost{width:100%;margin-top:7px}.gate.ok{color:#86efac;border-color:#24553c}.gate.blocked{color:#fca5a5;border-color:#5c2b35}.message{min-height:16px;margin:10px 0 0;color:#64748b;font-size:10px}.lower{margin-top:14px}.cash{font-size:18px;color:#a7f3d0}.status-pill{padding:4px 7px;color:#93c5fd;font-size:8px}.empty-box{padding:30px;color:#475569;text-align:center}.shell>footer{display:flex;justify-content:space-between;gap:16px;margin-top:18px;color:#475569;font:9px ui-monospace,SFMono-Regular,Menlo,monospace}@media(max-width:1100px){.quote-grid{grid-template-columns:repeat(3,1fr)}.metric-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:800px){.layout-grid{grid-template-columns:1fr}.topbar{align-items:flex-start;flex-direction:column}.top-actions{width:100%;justify-content:space-between}}@media(max-width:560px){.shell{width:min(100% - 20px,1400px);padding-top:18px}.quote-grid{grid-template-columns:repeat(2,1fr)}.quotes,.panel{padding:14px}.metric-grid{grid-template-columns:1fr 1fr}.shell>footer{flex-direction:column}.section-title{align-items:flex-start;flex-direction:column}}
+:root {
+  --bg: #06090d;
+  --panel: #0d141c;
+  --panel-2: #0a1017;
+  --line: #1c2733;
+  --line-2: #263442;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --dim: #475569;
+  --accent: #67e8f9;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --bad: #fb7185;
+  --buy: #f87171;
+  --sell: #60a5fa;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; background: radial-gradient(circle at 50% -10%, #111a25 0, var(--bg) 45%); }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+h1, h2, h3, h4, p { margin-top: 0; }
+h1 { margin-bottom: 6px; font-size: clamp(26px, 3.6vw, 40px); letter-spacing: -.04em; }
+h2 { margin: 0; font-size: 18px; }
+h4 { margin: 0 0 8px; color: var(--muted); font: 800 10px var(--mono); letter-spacing: .12em; }
+small { color: var(--muted); }
+.up { color: var(--ok); }
+.down { color: var(--bad); }
+b.buy, .buy { color: var(--buy); }
+b.sell, .sell { color: var(--sell); }
+.hold { color: var(--muted); }
+
+/* 표(min-width 640px)가 그리드 컬럼을 늘리지 못하도록 컬럼과 카드의 최소 폭을 0으로 고정한다 */
+.shell { width: min(1400px, calc(100% - 32px)); margin: auto; padding: 24px 0 44px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.shell > *, .card, .layout-grid > * { min-width: 0; }
+.eyebrow { margin: 0 0 6px; color: var(--accent); font: 800 10px var(--mono); letter-spacing: .16em; }
+.sub, .hint { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+/* 상단 상태 */
+.topbar { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.status-strip { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
+.message { min-height: 18px; margin: -4px 0 0; padding: 6px 10px; border-left: 3px solid var(--line-2); color: var(--muted); font-size: 12px; }
+.message.ok { border-color: var(--ok); color: #bbf7d0; }
+.message.bad { border-color: var(--bad); color: #fecdd3; }
+.message .failures { color: var(--muted); }
+.notice { padding: 12px 14px; border: 1px solid #4b3b1d; border-radius: 9px; background: #171207; color: var(--warn); font-size: 12px; }
+.notice.danger { border-color: #5c2b35; background: #1a0b10; color: #fecdd3; }
+
+/* 배지 */
+.pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-2); border-radius: 999px; padding: 6px 10px; color: #94a3b8; font: 800 10px var(--mono); letter-spacing: .06em; white-space: nowrap; }
+.pill.mini { padding: 3px 8px; font-size: 9px; }
+.pill.ok { color: #86efac; border-color: #24553c; background: #0b1a13; }
+.pill.warn { color: #fde68a; border-color: #5a4a1d; background: #1a1507; }
+.pill.bad { color: #fca5a5; border-color: #5c2b35; background: #1a0b10; }
+.pill.neutral { color: #94a3b8; }
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--dim); margin-right: 4px; vertical-align: middle; }
+.dot.ok { background: var(--ok); }
+.dot.bad { background: var(--bad); }
+
+/* 버튼 */
+.btn { border: 1px solid #334155; border-radius: 8px; padding: 9px 13px; color: var(--text); background: #0e151d; font-size: 12px; font-weight: 800; }
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn.small { padding: 7px 10px; font-size: 11px; }
+.btn.active { border-color: var(--accent); color: #e0f2fe; }
+.btn.ghost { width: 100%; margin-top: 8px; }
+.primary { width: 100%; padding: 13px; border: 1px solid #34d399; border-radius: 8px; color: #d1fae5; background: #0b211a; font-size: 13px; font-weight: 900; }
+.primary.buy { border-color: var(--buy); background: #23100f; color: #fecaca; }
+.primary.sell { border-color: var(--sell); background: #0e1a2b; color: #dbeafe; }
+.segmented { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+.segmented button { padding: 10px; border: 1px solid var(--line-2); border-radius: 7px; color: #94a3b8; background: #080e14; font-size: 12px; font-weight: 800; }
+.segmented button.active { border-color: var(--accent); color: #e0f2fe; background: #0d1a21; }
+.segmented button.active.buy { border-color: var(--buy); color: #fecaca; }
+.segmented button.active.sell { border-color: var(--sell); color: #dbeafe; }
+.segmented button.danger { border-color: #5c2b35; color: #fca5a5; }
+.segmented button.active.bad { border-color: var(--bad); color: #fecdd3; background: #1a0b10; }
+
+/* 카드 */
+.card { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(180deg, var(--panel), var(--panel-2)); box-shadow: 0 16px 40px #0004; }
+.card-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.card-head .hint { text-align: right; }
+.layout-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+
+/* 요약 타일 */
+.summary { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.tile { padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); min-width: 0; }
+.tile small { display: block; margin-bottom: 6px; font-size: 10px; letter-spacing: .04em; }
+.tile b { display: block; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile span { display: block; margin-top: 4px; color: var(--dim); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile.ok { border-color: #24553c; } .tile.ok b { color: #86efac; }
+.tile.warn { border-color: #5a4a1d; } .tile.warn b { color: #fde68a; }
+.tile.bad { border-color: #5c2b35; } .tile.bad b { color: #fca5a5; }
+
+/* 관심종목 */
+.quote-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.quote-card { min-width: 0; text-align: left; padding: 13px; border: 1px solid #202c38; border-radius: 9px; background: #0a1016; color: var(--text); display: grid; gap: 4px; }
+.quote-card:hover, .quote-card.selected { border-color: #3a6a76; background: #0c151b; }
+.quote-card.selected { box-shadow: inset 0 0 0 1px #3a6a76; }
+.quote-head { display: flex; flex-direction: column; gap: 2px; }
+.quote-head small { font: 10px var(--mono); }
+.quote-card strong { margin-top: 8px; font-size: 18px; }
+.quote-card .change { font-size: 11px; }
+.quote-card .meta { font-size: 10px; margin-top: 4px; }
+.empty-box { grid-column: 1 / -1; padding: 28px; color: var(--dim); text-align: center; }
+
+/* 계좌 */
+.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+.metric-grid > div { padding: 12px; border: 1px solid #1e2935; border-radius: 8px; background: #080e14; }
+.metric-grid small { display: block; font-size: 10px; margin-bottom: 6px; }
+.metric-grid b { font-size: 15px; }
+.diff-list { margin: 0 0 12px; padding: 10px 14px 10px 28px; border: 1px solid #5c2b35; border-radius: 8px; background: #1a0b10; color: #fecdd3; font-size: 11px; }
+
+/* 주문 패널 */
+.order-panel label { display: block; margin: 12px 0 10px; color: var(--muted); font-size: 11px; }
+.order-panel select, .order-panel input { display: block; width: 100%; margin-top: 6px; padding: 10px 11px; border: 1px solid var(--line-2); border-radius: 7px; outline: none; color: var(--text); background: #080e14; font-size: 13px; }
+.order-panel select:focus, .order-panel input:focus { border-color: var(--accent); }
+.order-panel input:disabled { opacity: .5; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.form-grid label { margin: 0 0 12px; }
+.order-preview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 0 12px; padding: 11px; border: 1px solid #1d2935; border-radius: 8px; background: #080e14; }
+.order-preview span { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 10px; }
+.order-preview b { color: #cbd5e1; font-size: 13px; }
+
+/* 자동매매 */
+.kv { display: grid; gap: 8px; margin: 0 0 12px; }
+.kv > div { display: grid; grid-template-columns: 90px 1fr; gap: 10px; align-items: baseline; padding: 8px 10px; border: 1px solid #1d2935; border-radius: 8px; background: #080e14; }
+.kv dt { color: var(--muted); font-size: 11px; }
+.kv dd { margin: 0; font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
+.kv dd small { display: block; margin-top: 2px; }
+.reason-list { margin: 0 0 12px; padding: 0; list-style: none; display: grid; gap: 6px; }
+.reason-list li { padding: 8px 10px; border: 1px solid #1d2935; border-radius: 8px; background: #080e14; font-size: 12px; }
+.reason-list li small { display: block; margin-top: 3px; color: var(--muted); }
+
+/* 이력 */
+.tabs { display: flex; gap: 6px; margin-bottom: 12px; overflow-x: auto; }
+.tabs button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--line-2); border-radius: 999px; color: #94a3b8; background: #080e14; font-size: 12px; font-weight: 800; white-space: nowrap; }
+.tabs button.active { border-color: var(--accent); color: #e0f2fe; background: #0d1a21; }
+.tabs button small { font: 800 10px var(--mono); }
+.table-wrap { overflow: auto; }
+table { width: 100%; border-collapse: collapse; min-width: 640px; }
+th, td { padding: 10px 8px; border-top: 1px solid #17212c; text-align: right; font-size: 12px; white-space: nowrap; vertical-align: top; }
+th { color: var(--dim); font: 800 9px var(--mono); letter-spacing: .1em; }
+th:first-child, td:first-child { text-align: left; }
+td small { display: block; font-size: 10px; }
+td.wrap { white-space: normal; text-align: left; max-width: 380px; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: #0c151b; }
+tr.detail td { text-align: left; white-space: normal; background: #080e14; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.empty { text-align: center !important; color: var(--dim); padding: 22px; }
+
+.shell > footer { display: flex; justify-content: space-between; gap: 16px; margin-top: 8px; color: var(--dim); font: 10px var(--mono); }
+
+@media (max-width: 1100px) {
+  .summary { grid-template-columns: repeat(3, 1fr); }
+  .quote-grid { grid-template-columns: repeat(3, 1fr); }
+  .metric-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 800px) {
+  .layout-grid, .detail-grid { grid-template-columns: 1fr; }
+  .topbar { align-items: flex-start; flex-direction: column; }
+  .status-strip { justify-content: flex-start; }
+  .summary { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px) {
+  .shell { width: min(100% - 20px, 1400px); padding-top: 16px; }
+  .quote-grid, .summary { grid-template-columns: repeat(2, 1fr); }
+  .card { padding: 14px; }
+  .kv > div { grid-template-columns: 1fr; }
+  .shell > footer, .card-head { flex-direction: column; align-items: flex-start; }
+  .card-head .hint { text-align: left; }
+}

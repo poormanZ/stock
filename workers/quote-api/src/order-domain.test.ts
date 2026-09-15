@@ -47,10 +47,18 @@ describe('order request validation', () => {
     expect(isValidOrderRequest({ id: '1', clientOrderId: 'c', symbol: '005930', side: 'sell', orderType: 'market', quantity: 1 })).toBe(true);
   });
 
+  it('accepts an optional trimmed reason and rejects over-long ones', () => {
+    const request = { id: '1', clientOrderId: 'c', symbol: '005930', side: 'buy' as const, orderType: 'market' as const, quantity: 1 };
+    expect(createOrder({ ...request, reason: '  SMA5>SMA20 ' }).reason).toBe('SMA5>SMA20');
+    expect(createOrder({ ...request, reason: '' }).reason).toBeUndefined();
+    expect(() => assertOrderRequest({ ...request, reason: 'x'.repeat(201) })).toThrow('INVALID_ORDER_REASON');
+    expect(() => assertOrderRequest({ ...request, reason: 7 as never })).toThrow('INVALID_ORDER_REASON');
+  });
+
   it('creates orders from known request fields only', () => {
     const order = createOrder({ id: '1', clientOrderId: 'c', symbol: '005930', side: 'buy', orderType: 'market', quantity: 1, extra: 'x' } as never, '2026-09-15T00:00:00.000Z');
     expect(order).toEqual({
-      id: '1', clientOrderId: 'c', symbol: '005930', side: 'buy', orderType: 'market', quantity: 1, limitPrice: undefined,
+      id: '1', clientOrderId: 'c', symbol: '005930', side: 'buy', orderType: 'market', quantity: 1, limitPrice: undefined, reason: undefined,
       executedQuantity: 0, averageExecutedPrice: 0, status: 'CREATED', createdAt: '2026-09-15T00:00:00.000Z', updatedAt: '2026-09-15T00:00:00.000Z',
     });
     expect('extra' in order).toBe(false);

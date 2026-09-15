@@ -13,11 +13,22 @@ function parseAsOf(value: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-export function getQuoteFreshness(quote: Pick<StockQuote, 'asOf' | 'marketStatus'>, now = new Date()): QuoteFreshness {
-  if (quote.marketStatus === 'CLOSED') return 'CLOSED';
-  if (!quote.asOf.trim()) return 'TIME_UNKNOWN';
+/**
+ * 시세 신선도. KIS 체결시각(asOf)이 있으면 그것을, 없으면 Worker 수신 시각(fetchedAt)을 기준으로 판단한다.
+ * 둘 다 없으면 시각 미확인이다.
+ */
+function parseIso(value?: string): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
-  const asOf = parseAsOf(quote.asOf);
+export function getQuoteFreshness(quote: Pick<StockQuote, 'asOf' | 'marketStatus'> & { fetchedAt?: string }, now = new Date()): QuoteFreshness {
+  if (quote.marketStatus === 'CLOSED') return 'CLOSED';
+  const hasAsOf = Boolean(quote.asOf.trim());
+  if (!hasAsOf && !quote.fetchedAt) return 'TIME_UNKNOWN';
+
+  const asOf = hasAsOf ? parseAsOf(quote.asOf) : parseIso(quote.fetchedAt);
   if (!asOf) return 'INVALID_TIME';
 
   const age = now.getTime() - asOf.getTime();

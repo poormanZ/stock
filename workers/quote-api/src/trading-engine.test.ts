@@ -55,7 +55,8 @@ describe('runTradingCycle', () => {
     const [mode, request, price] = (d.placeOrder as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(mode).toBe('DRY_RUN');
     expect(price).toBe(12);
-    expect(request).toMatchObject({ symbol: '005930', side: 'buy', orderType: 'market', clientOrderId: autoClientOrderId('DRY_RUN', '20260915', '005930', 'buy') });
+    expect(request).toMatchObject({ symbol: '005930', side: 'buy', orderType: 'market', clientOrderId: autoClientOrderId('DRY_RUN', '20260915', '005930', 'buy'), reason: 'SMA2>SMA3' });
+    expect(result.ran && result.run.orders[0]).toMatchObject({ reason: 'SMA2>SMA3', price: 12, result: 'FILLED' });
     // cash 1,000,000 × 0.5 / (12 × (1 + 20bp)) ≈ 41,583 → maxOrderAmount 1,000,000 / 12 = 83,333 → maxOrderQuantity 1000
     expect(request.quantity).toBe(1000);
     expect(d.releaseLease).toHaveBeenCalledTimes(1);
@@ -66,7 +67,7 @@ describe('runTradingCycle', () => {
     const d = deps({ getPrice: async () => 9, readPortfolio: async () => ({ cash: 0, positions: [{ symbol: '005930', quantity: 7, averagePrice: 10 }] }) });
     const result = await runTradingCycle(env, 'cron', d);
     expect(result.ran && result.run.signals[0].reason).toMatch(/^STOP_LOSS/);
-    expect((d.placeOrder as ReturnType<typeof vi.fn>).mock.calls[0][1]).toMatchObject({ side: 'sell', quantity: 7 });
+    expect((d.placeOrder as ReturnType<typeof vi.fn>).mock.calls[0][1]).toMatchObject({ side: 'sell', quantity: 7, reason: expect.stringMatching(/^STOP_LOSS/) });
   });
 
   it('moves to EMERGENCY_STOP without acquiring the lease when the kill switch is active', async () => {

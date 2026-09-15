@@ -3,6 +3,8 @@ export type OrderStatus = typeof ORDER_STATUSES[number];
 export type OrderSide = 'buy' | 'sell';
 export type OrderType = 'market' | 'limit';
 
+export const ORDER_REASON_MAX_LENGTH = 200;
+
 export interface Order {
   id: string;
   clientOrderId: string;
@@ -13,6 +15,8 @@ export interface Order {
   orderType: OrderType;
   quantity: number;
   limitPrice?: number;
+  /** 주문을 낸 이유(전략 신호, 손절/익절, 수동 등). KIS로 전송되지 않고 내부 기록·감사 로그에만 남는다 */
+  reason?: string;
   executedQuantity: number;
   averageExecutedPrice: number;
   status: OrderStatus;
@@ -28,6 +32,7 @@ export interface CreateOrderRequest {
   orderType: OrderType;
   quantity: number;
   limitPrice?: number;
+  reason?: string;
 }
 
 const transitions: Record<OrderStatus, readonly OrderStatus[]> = {
@@ -59,6 +64,7 @@ export function assertOrderRequest(request: CreateOrderRequest): void {
   if (!Number.isInteger(request.quantity) || request.quantity <= 0) throw new Error('INVALID_ORDER_QUANTITY');
   if (request.orderType === 'limit' && (!Number.isFinite(request.limitPrice) || (request.limitPrice ?? 0) <= 0)) throw new Error('INVALID_LIMIT_PRICE');
   if (request.orderType === 'market' && request.limitPrice !== undefined) throw new Error('MARKET_ORDER_PRICE_NOT_ALLOWED');
+  if (request.reason !== undefined && (typeof request.reason !== 'string' || request.reason.length > ORDER_REASON_MAX_LENGTH)) throw new Error('INVALID_ORDER_REASON');
 }
 
 export function isValidOrderRequest(value: unknown): value is CreateOrderRequest {
@@ -79,6 +85,7 @@ export function createOrder(request: CreateOrderRequest, now = new Date().toISOS
     orderType: request.orderType,
     quantity: request.quantity,
     limitPrice: request.limitPrice,
+    reason: request.reason?.trim() || undefined,
     executedQuantity: 0,
     averageExecutedPrice: 0,
     status: 'CREATED',

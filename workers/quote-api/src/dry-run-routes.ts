@@ -60,7 +60,7 @@ export async function placeDryRunOrder(env: Env, candidate: Partial<DryRunOrderC
     await appendAudit(env, {
       ...auditBase,
       type: status === 'FILLED' ? 'ORDER_FILLED' : status === 'PARTIALLY_FILLED' ? 'ORDER_PARTIAL_FILL' : 'ORDER_ACCEPTED',
-      message: `${source} DRY_RUN ${orderRequest.side} ${orderRequest.symbol} ${execution.executedQuantity ?? '?'}/${orderRequest.quantity} @ ${execution.executedPrice ?? '?'}`,
+      message: `${source} DRY_RUN ${orderRequest.side} ${orderRequest.symbol} ${execution.executedQuantity ?? '?'}/${orderRequest.quantity} @ ${execution.executedPrice ?? '?'}${orderRequest.reason ? ` · ${orderRequest.reason}` : ''}`,
       details: { fee: execution.fee, tax: execution.tax, cash: execution.cash },
     });
     return { status: 200, body };

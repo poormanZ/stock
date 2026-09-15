@@ -25,7 +25,7 @@ KIS Open API
 현재 단계와 남은 작업은 [`docs/status.md`](./docs/status.md)를 기준으로 한다.
 
 - Cloudflare Worker `quote-api`: KIS 인증/토큰 캐시, 시세·일봉·계좌·주문내역 조회, reconciliation, DRY_RUN 시뮬레이터, Risk Manager, Kill Switch, PAPER 주문/취소/재동기화, SMA 전략·백테스트, Cron 자동매매 엔진(DRY_RUN/PAPER), 감사 로그·알림, 실계좌 게이트(기본 비활성)
-- GitHub Pages 프론트엔드: 관심종목 시세, 계좌 현황, DRY_RUN 주문, 자동매매 시작/정지, Kill Switch, 감사 로그
+- GitHub Pages 프론트엔드: 상태 스트립·요약 타일, 관심종목 시세, 계좌 현황, DRY_RUN 주문(사유 기록), 자동매매 시작/정지/1회 실행, Kill Switch, 이력 탭(DRY_RUN 주문·자동매매 실행 사유·감사 로그·KIS 주문), 60초 자동 새로고침
 - 운영 Worker의 `KIS_ENVIRONMENT`는 `LIVE`(조회 전용)이므로 PAPER 주문 전송은 운영 환경에서 수행하지 않는다. 실계좌 주문은 `docs/operations.md` §8 절차 없이는 열리지 않는다
 
 ## 구조

@@ -19,7 +19,7 @@ export type TradingRunStatus = 'OK' | 'SKIPPED' | 'ERROR';
 export type TradingErrorSource = 'DATA' | 'STRATEGY' | 'ORDER' | 'SYSTEM';
 
 export interface TradingRunSignal { symbol: string; action: string; reason: string; price?: number; }
-export interface TradingRunOrder { symbol: string; side: 'buy' | 'sell'; quantity: number; clientOrderId: string; status: number | 'ERROR'; result: string; }
+export interface TradingRunOrder { symbol: string; side: 'buy' | 'sell'; quantity: number; clientOrderId: string; status: number | 'ERROR'; result: string; reason: string; price?: number; }
 
 export interface TradingRun {
   id: string;

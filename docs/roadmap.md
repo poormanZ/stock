@@ -35,6 +35,7 @@
 - [x] 자동 실행 스케줄러(Cron, DO lease, 실행 이력, ERROR/EMERGENCY_STOP 전이)
 - [x] 감사 로그 / webhook 알림 / 체결 증분 포지션 원장 / PAPER 일일 실현손실
 - [x] 실계좌 주문 게이트(기본 비활성, 명시적 arm + 확인 문구) 및 LIVE 어댑터
+- [x] 대시보드 재구성(상태 스트립·요약·이력 탭) 및 자동매매 매수/매도 사유 표시
 - [ ] 모의투자 주문 안정성 검증 (기간 필요)
 - [ ] 실계좌 주문 활성화 (PAPER 검증 후 운영자 결정. `docs/operations.md` §8 체크리스트)
 
@@ -56,6 +57,7 @@
 - [x] GitHub Pages → Worker 연동
 - [x] 실제 KIS 시세 통합 테스트
 - [x] GitHub Pages 시세/계좌/DRY_RUN 통합 대시보드
+- [x] 대시보드 모듈 분리(`views/`, `api/`, `format.ts`), 상태 한글 라벨, 이력 탭, 자동 새로고침
 
 ## Phase 3 — 계좌/잔고/포지션
 - [x] `inquire-balance` (`TTTC8434R` / `VTTC8434R`)

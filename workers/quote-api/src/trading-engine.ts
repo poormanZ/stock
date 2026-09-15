@@ -189,21 +189,22 @@ export async function runTradingCycle(env: Env, trigger: 'cron' | 'manual', deps
 
       const quantity = signal.action === 'buy' ? sizeEntry(portfolio.cash, price, 0, config.sizing, costBps) : held?.quantity ?? 0;
       if (quantity <= 0) {
-        signals[signals.length - 1].reason += ' (NO_SIZE)';
+        signals[signals.length - 1] = { symbol, action: signal.action, reason: `${signal.reason} (NO_SIZE)`, price };
         continue;
       }
       const clientOrderId = autoClientOrderId(config.mode, today, symbol, signal.action);
-      const request: CreateOrderRequest = { id: crypto.randomUUID(), clientOrderId, symbol, side: signal.action, orderType: 'market', quantity };
+      const request: CreateOrderRequest = { id: crypto.randomUUID(), clientOrderId, symbol, side: signal.action, orderType: 'market', quantity, reason: signal.reason };
+      const record = { symbol, side: signal.action, quantity, clientOrderId, reason: signal.reason, price };
 
       let placement: OrderPlacement;
       try {
         placement = await deps.placeOrder(config.mode, request, price);
       } catch (error) {
-        orders.push({ symbol, side: signal.action, quantity, clientOrderId, status: 'ERROR', result: errorMessage(error) });
+        orders.push({ ...record, status: 'ERROR', result: errorMessage(error) });
         throw wrap('ORDER', error);
       }
       const result = placement.body.idempotent ? 'ALREADY_PLACED' : String(placement.body.error ?? (placement.body.order as { status?: string } | undefined)?.status ?? placement.status);
-      orders.push({ symbol, side: signal.action, quantity, clientOrderId, status: placement.status, result });
+      orders.push({ ...record, status: placement.status, result });
       if (placement.status === 200 && !placement.body.idempotent && signal.action === 'buy') {
         portfolio.cash -= quantity * price * (1 + costBps / 10_000);
       }

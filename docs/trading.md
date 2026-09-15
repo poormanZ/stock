@@ -60,7 +60,8 @@ Signal { action: 'buy' | 'sell' | 'hold', reason }
 
 | 항목 | 규칙 |
 |---|---|
-| 요청 검증 | `id`, `clientOrderId`, 6자리 `symbol`, `side ∈ buy/sell`, `orderType ∈ market/limit`, 정수 `quantity > 0`, limit은 `limitPrice > 0`, market은 `limitPrice` 금지 |
+| 요청 검증 | `id`, `clientOrderId`, 6자리 `symbol`, `side ∈ buy/sell`, `orderType ∈ market/limit`, 정수 `quantity > 0`, limit은 `limitPrice > 0`, market은 `limitPrice` 금지, `reason`은 선택(≤200자) |
+| 주문 사유 | 자동매매는 신호 사유(`SMA5>SMA20`, `STOP_LOSS:-5.20%`, `TAKE_PROFIT:+10.10%`)를, 대시보드 수동 주문은 `manual`을 `reason`에 넣는다. 주문 기록·감사 로그·실행 이력에 남고 KIS로는 전송하지 않는다 |
 | 상태 변경 | `transitionOrder`만 사용. 허용 전이는 `docs/design.md` §7 |
 | 멱등성 | 같은 `clientOrderId`는 기존 주문을 반환한다(DRY_RUN·PAPER·LIVE). 자동매매는 `AUTO-{mode}-{날짜}-{종목}-{방향}` |
 | 재시도 | 주문 POST는 KIS 5xx에 재시도하지 않는다. 429만 재시도. 결과 불확실 시 `UNKNOWN` |

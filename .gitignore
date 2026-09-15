@@ -79,3 +79,4 @@ coverage/
 Thumbs.db
 *.swp
 *.swo
+.gstack/

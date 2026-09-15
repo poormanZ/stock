@@ -102,6 +102,12 @@
 - `live-trading-gate.ts`, `live-routes.ts`, `kis-live-order-adapter.ts` (`kis-cash-order-adapter.ts` 공통화)
 - `/live/status|arm|disarm|orders|orders/cancel`. 기본 403 `LIVE_TRADING_DISABLED`
 
+### 대시보드 재구성 / 주문 사유 (2026-09-15 추가)
+
+- `Order.reason` 추가: 자동매매 신호 사유와 수동 주문(`manual`)이 주문 기록·감사 로그·실행 이력(`TradingRunOrder.reason`, `price`)에 남는다
+- 프론트를 `state.ts` / `api/` / `format.ts` / `views/*`로 분리. 상태 스트립·요약 타일·이력 탭(DRY_RUN 주문/자동매매 실행/감사 로그/KIS 주문), 사유 한글 설명, 60초 자동 새로고침, 이벤트 위임
+- 시세 신선도는 `asOf`가 없으면 `fetchedAt` 기준으로 판단. 미사용 `stockCard.ts` 삭제
+
 ## 4. 포지션 동기화 정책
 
 내부 포지션은 자동 주문 경로에서 KIS 값으로 조용히 덮어쓰지 않는다. 운영자가 명시적으로 `POST /paper/position-sync`를 호출하면 KIS `AccountSnapshot.positions`의 `symbol`, `quantity`, `averagePrice`를 내부 Durable Object 포지션 기준선으로 반영한다.
@@ -168,9 +174,10 @@
 | Worker `npm run test:integration` | 환경변수 없음 → 2 skipped |
 | `wrangler deploy --dry-run` | 번들 성공, DO 6개·KV·Cron 인식 |
 | 로컬 `wrangler dev --test-scheduled` 스모크 | `/trading/*`, `/live/status`, `/audit`, `/__scheduled`, Kill Switch 동작 확인 (KIS 키 없음 → 사이클 `ERROR[DATA]` 전이 확인) |
-| 프론트 `npm run check` / `npm run build` | 통과 |
+| 프론트 `npm run check` / `npm run build` / `npm test` | 통과 (6 테스트) |
+| 로컬 Worker + Vite 연동 | DRY_RUN 주문 사유·자동매매 실행 이력이 대시보드에 표시되는 것 확인 |
 
-이 작업은 아직 push/배포 전이다.
+`fa7ea6d`까지 배포 완료. 대시보드 재구성과 `Order.reason`은 미커밋이다.
 
 ## 9. 아직 남은 작업
 
@@ -178,7 +185,7 @@
 
 1. push → Deploy Workflow(check → test → deploy) 성공 및 `v5` 마이그레이션(AuditLogStoreDO, TradingStateStoreDO) 적용 확인
 2. 배포된 Worker에서 `/trading/status`, `/live/status`=`LIVE_TRADING_DISABLED`, `/audit`, `OPTIONS` 204 실측
-3. Pages UI에서 DRY_RUN 자동매매 시작 → 5분 Cron 실행 이력·감사 로그 관찰
+3. Pages UI에서 DRY_RUN 자동매매 시작 → 5분 Cron 실행 이력·감사 로그 관찰. 이력 탭 "자동매매 실행"에서 신호·사유가 쌓이는지 확인
 4. PAPER 주문 안정성 검증 (`docs/operations.md` §8)
 
 ### Phase 7

@@ -17,6 +17,12 @@ describe('quote freshness', () => {
     expect(getQuoteFreshness({ asOf: 'unknown', marketStatus: 'OPEN' }, now)).toBe('INVALID_TIME');
   });
 
+  it('falls back to the worker fetch time when KIS gives no execution time', () => {
+    expect(getQuoteFreshness({ asOf: '', marketStatus: 'OPEN', fetchedAt: '2026-09-14T06:29:50.000Z' }, now)).toBe('FRESH');
+    expect(getQuoteFreshness({ asOf: '', marketStatus: 'OPEN', fetchedAt: '2026-09-14T06:00:00.000Z' }, now)).toBe('STALE');
+    expect(getQuoteFreshness({ asOf: '', marketStatus: 'OPEN', fetchedAt: 'bad' }, now)).toBe('INVALID_TIME');
+  });
+
   it('marks closed market separately', () => {
     expect(getQuoteFreshness({ asOf: '20260914 151500', marketStatus: 'CLOSED' }, now)).toBe('CLOSED');
   });
