@@ -29,6 +29,10 @@ function isInternalStateUnavailable(error: unknown): boolean {
   return error instanceof Error && error.message === INTERNAL_STATE_UNAVAILABLE;
 }
 
+function isDailyLossUnavailable(error: unknown): boolean {
+  return error instanceof Error && error.message === 'KIS_DAILY_LOSS_UNAVAILABLE:PAPER';
+}
+
 export async function handlePaperOrder({ request, env, origin }: RouteContext): Promise<Response> {
   const blocked = paperPrecheck(env, origin, true);
   if (blocked) return blocked;
@@ -56,10 +60,14 @@ export async function handlePaperOrder({ request, env, origin }: RouteContext): 
     const existing = records.find((item) => item.clientOrderId === orderRequest.clientOrderId);
     if (existing) return json({ idempotent: true, order: existing }, 200, origin);
 
-    const [reconciliation, quote, killSwitch] = await Promise.all([
+    const [reconciliation, quote, killSwitch, dailyLossResult] = await Promise.all([
       reconcileWithKis(env, internalState),
       createQuoteAdapter(env).getQuote(orderRequest.symbol),
       readKillSwitch(env),
+      createAccountAdapter(env).getDailyLoss(todayKst()).then((snapshot) => ({ dailyLoss: snapshot.dailyLoss, available: true })).catch((error) => {
+        if (isDailyLossUnavailable(error)) return { dailyLoss: 0, available: false };
+        throw error;
+      }),
     ]);
     const gate = checkNewOrderGate(orderRequest, reconciliation);
     if (!gate.allowed) return json({ error: gate.reason, reconciliation }, 409, origin);
@@ -67,7 +75,12 @@ export async function handlePaperOrder({ request, env, origin }: RouteContext): 
     const now = new Date().toISOString();
     const risk = checkRisk({
       request: orderRequest,
-      state: { positions: internalState.positions, orders: records },
+      state: {
+        positions: internalState.positions,
+        orders: records,
+        dailyLoss: dailyLossResult.dailyLoss,
+        dailyLossAvailable: dailyLossResult.available,
+      },
       market: { referencePrice, quoteAsOf: quoteReferenceTime(quote), now },
       config: DEFAULT_RISK_CONFIG,
       killSwitchActive: killSwitch.active,
