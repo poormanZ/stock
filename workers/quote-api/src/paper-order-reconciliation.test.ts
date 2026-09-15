@@ -5,8 +5,8 @@ import type { OrderRecord } from './kis-order-adapter';
 
 const base = createOrder({ id: 'o1', clientOrderId: 'c1', symbol: '005930', side: 'buy', orderType: 'limit', quantity: 10, limitPrice: 70000 }, '2026-09-15T00:00:00.000Z');
 const broker = (overrides: Partial<OrderRecord> = {}): OrderRecord => ({
-  brokerOrderId: 'b1', brokerOrderOrgNo: 'org1', symbol: '005930', side: 'buy', orderType: 'limit', quantity: 10,
-  executedQuantity: 0, averageExecutedPrice: 0, status: 'ACCEPTED', ...overrides,
+  brokerOrderId: 'b1', originalOrderId: '', orderDate: '20260915', symbol: '005930', name: 'Samsung Electronics', side: 'buy', orderType: 'limit', quantity: 10,
+  orderPrice: 70000, executedQuantity: 0, averageExecutedPrice: 0, status: 'ACCEPTED', orderTime: '090000', ...overrides,
 });
 
 describe('PAPER order reconciliation', () => {
