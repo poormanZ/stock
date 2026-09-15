@@ -27,6 +27,7 @@
 - [x] PAPER 주문 clientOrderId 멱등성 및 UNKNOWN 상태 처리
 - [x] Worker 타입체크(`tsc` + `@cloudflare/workers-types`) 및 라우터/HTTP 클라이언트 테스트
 - [x] 수정된 CORS preflight / PAPER 위험검사 경로 배포 후 실측 검증
+- [x] PAPER 내부 포지션을 KIS 계좌 스냅샷에서 명시적으로 동기화하는 경로
 - [ ] 모의투자 주문 안정성 검증
 - [ ] 전략/백테스트
 - [ ] 실계좌 주문
@@ -59,6 +60,7 @@
 - [x] Durable Object 내부 상태 저장
 - [x] 신규주문 Gate
 - [x] DRY_RUN을 KIS reconciliation과 분리
+- [x] PAPER 명시적 포지션 스냅샷 동기화 (`POST /paper/position-sync`)
 
 ## Phase 4 — 주문 도메인
 - [x] `Order` 도메인 모델
@@ -100,6 +102,7 @@
 - [x] 장 운영시간 처리
 - [x] 실패/UNKNOWN 복구 1차 처리
 - [x] 부분체결/취소 복구
+- [x] 내부 포지션 명시적 스냅샷 동기화
 - [ ] 일정 기간 안정성 검증
 
 ## Phase 8 — 전략 / 백테스트
@@ -161,15 +164,27 @@
 4. 동일 `clientOrderId` 재전송 시 멱등 처리 확인
 5. Kill Switch 활성화 시 `KILL_SWITCH_ACTIVE` 거부 확인
 
-### 1순위 — 내부 포지션 동기화 정책 결정 및 구현
+### 완료 — 내부 포지션 동기화 정책 및 구현 1차
 
-현재 내부 포지션을 KIS 계좌로 갱신하는 경로가 없어, 계좌에 보유종목이 있으면 reconciliation이 `MISMATCHED`가 되고 PAPER 신규 주문 Gate가 닫힌다. 체결 기반 갱신과 KIS 스냅샷 채택 중 정책을 정한 뒤 구현해야 PAPER 안정성 검증을 시작할 수 있다. 같은 단계에서 `dailyLoss` 산출(체결 기반 실현손익)을 추가해 일일 손실 한도를 실효화한다.
+내부 포지션은 **자동 주문 경로에서 KIS 스냅샷으로 조용히 덮어쓰지 않고**, 운영자가 명시적으로 동기화할 때만 KIS PAPER 계좌 스냅샷을 내부 DO에 반영한다. 따라서 외부에서 발생한 예상치 못한 포지션 변경은 기존 reconciliation mismatch로 남아 신규 주문을 fail-closed 한다.
+
+- `POST /paper/position-sync` 추가
+- KIS `AccountSnapshot.positions`의 `symbol/quantity`만 내부 포지션으로 반영
+- 기존 `orderRecords`/주문 요약은 보존
+- DRY_RUN에는 이 경로를 사용하지 않음
+- 내부 상태 DO에 `sync-positions` 명령 및 회귀 테스트 추가
+
+이 방식으로 **체결 기록과 포지션 스냅샷을 혼합해 임의로 추정하지 않고**, KIS를 실제 보유수량의 스냅샷 원천으로 사용한다. 동기화 후에도 당일 주문 상태가 불일치하면 PAPER 신규 주문 Gate는 계속 닫힌다.
+
+### 다음 1순위 — `dailyLoss` 산출 구현
+
+현재 `RiskState.dailyLoss` 필드는 있으나 실제 체결 기반 실현손익 계산이 없어 일일 손실 한도가 실효화되지 않는다. 다음 단계에서 KST 거래일 기준으로 체결된 매수/매도 내역을 이용해 실현손익을 계산하고 Risk Manager 입력에 연결한다.
 
 ### 2순위 — PAPER 주문 안정성 검증
 
-PAPER 신규 주문은 한국시간(KST) 기준 평일 09:00~15:30 정규장에만 전송되도록 Worker 단계에서 차단한다. 주말과 장외 시간에는 KIS 주문 API까지 요청하지 않고 `MARKET_SESSION_CLOSED`를 반환한다. `/paper/reconcile`는 장외에서도 상태 복구를 위해 계속 호출할 수 있다.
+PAPER 신규 주문은 한국시간(KST) 기준 평일 09:00~15:30 정규장에만 전송되도록 Worker 단계에서 차단한다. 주말과 장외 시간에는 KIS 주문 API까지 요청하지 않고 `MARKET_SESSION_CLOSED`를 반환한다. `/paper/reconcile`와 `/paper/position-sync`는 장외에서도 상태 복구/동기화를 위해 호출할 수 있다.
 
-현재 Worker의 `KIS_ENVIRONMENT`는 `LIVE`이므로 `/paper/orders`와 `/paper/reconcile`는 실제 운영 환경에서 PAPER 작업을 수행하지 않는다. LIVE 주문 API는 계속 추가하지 않는다.
+현재 Worker의 `KIS_ENVIRONMENT`는 `LIVE`이므로 `/paper/orders`와 `/paper/reconcile`/`/paper/position-sync`는 실제 운영 Worker에서는 수행되지 않는다. LIVE 주문 API는 계속 추가하지 않는다.
 
 ### 3순위 — 일정 기간 안정성 검증
 
