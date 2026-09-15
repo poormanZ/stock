@@ -1,6 +1,6 @@
 # 한국투자증권 자동 주식매매 개발 로드맵
 
-> 기준일: 2026-09-14  
+> 기준일: 2026-09-15  
 > 기준 브랜치: `main`
 
 ## 현재 상태
@@ -25,6 +25,8 @@
 - [x] PAPER 주문 Adapter 기본 전송 경로
 - [x] PAPER 주문도 reconciliation Gate + Risk Manager 통과
 - [x] PAPER 주문 clientOrderId 멱등성 및 UNKNOWN 상태 처리
+- [x] Worker 타입체크(`tsc` + `@cloudflare/workers-types`) 및 라우터/HTTP 클라이언트 테스트
+- [ ] 수정된 CORS preflight / PAPER 위험검사 경로 배포 후 실측 검증
 - [ ] 모의투자 주문 안정성 검증
 - [ ] 전략/백테스트
 - [ ] 실계좌 주문
@@ -133,23 +135,33 @@
 - [ ] 민감정보 마스킹
 - [ ] 장애 알림
 - [ ] 재시작 복구
-- [ ] UNKNOWN 주문 자동 reconciliation
+- [x] UNKNOWN 주문을 `/paper/reconcile`에서 RECONCILING 경유로 복구 (수동 호출)
+- [ ] UNKNOWN 주문 자동 reconciliation (스케줄 트리거)
 
 ## Phase 12 — 품질 / 운영 안정화
-- [ ] 단위/통합 테스트
-- [ ] KIS API 장애 테스트
-- [ ] token 만료 테스트
-- [ ] 중복 주문/부분체결 테스트
+- [x] 순수 로직 단위 테스트 (상태 머신, Risk Manager, reconciliation, 시뮬레이터, 어댑터 계약, 라우터)
+- [ ] 실제 KIS PAPER 환경 통합 테스트
+- [x] KIS 5xx/429/인증 실패 처리 테스트 (HTTP 클라이언트)
+- [x] token 만료 해석(KST)·재발급 테스트
+- [x] 중복 주문(POST 비재시도, clientOrderId 멱등성)/부분체결 resync 테스트
 - [ ] 재시작/잔고 불일치 테스트
-- [ ] 빌드/배포 자동 검증
+- [x] 빌드/배포 자동 검증 (Worker: check → test → deploy, Pages: test → build)
 - [ ] 보안 점검
 - [ ] 운영 매뉴얼 및 실거래 전 체크리스트
 
 ## 현재 다음 작업
 
-### 1순위 — DRY_RUN 장외시간 회귀 검증
+### 1순위 — 배포 후 실측 검증
 
-최근 `/dry-run/orders`를 KIS 외부 조회와 완전히 분리했다. 다음 단계는 실제 Worker 엔드포인트에서 장외시간 주문을 호출해 성공 여부를 확인하고, Risk Manager 및 Kill Switch 거부도 함께 회귀 검증하는 것이다.
+2026-09-15 실측에서 배포된 Worker의 `OPTIONS` preflight가 500을 반환해 GitHub Pages UI의 모든 POST가 차단되고 있었고, `/risk` 응답에 CORS 헤더가 없었다. 수정 커밋(`96b0a0e`) 배포 후 다음을 확인한다.
+
+1. `curl -X OPTIONS -H 'Origin: https://poormanz.github.io' -H 'Access-Control-Request-Method: POST' <worker>/dry-run/orders` → 204 + `access-control-allow-origin`
+2. `GET /risk`, `GET /dry-run` → `access-control-allow-origin: https://poormanz.github.io`
+3. Pages UI에서 장외시간 DRY_RUN 주문 성공, 동일 주문 재전송 시 멱등 응답, Kill Switch 활성화 시 `KILL_SWITCH_ACTIVE` 거부
+
+### 1.5순위 — 내부 포지션 동기화 정책 결정
+
+내부 포지션을 KIS 계좌로 갱신하는 경로가 없어, 계좌에 보유종목이 있으면 reconciliation이 항상 `MISMATCHED`이고 PAPER 신규 주문 Gate가 닫힌다. 체결 기반 갱신과 KIS 스냅샷 채택 중 정책을 정한 뒤 구현해야 PAPER 안정성 검증을 시작할 수 있다. 같은 단계에서 `dailyLoss` 산출(체결 기반 실현손익)을 추가해 일일 손실 한도를 실효화한다.
 
 ### 2순위 — Phase 7 PAPER 주문 안정성 검증
 

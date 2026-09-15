@@ -1,8 +1,8 @@
 # 현재 개발 상태
 
-> 기준일: 2026-09-14
+> 기준일: 2026-09-15
 > 기준 브랜치: `main`
-> 정리 기준 커밋: `7fbdb948d3b32c43c68306eb823d7579293288b7`
+> 정리 기준 커밋: `96b0a0e` (`fix: repair CORS preflight, PAPER risk checks and token expiry; split worker routes`)
 
 ## 1. 프로젝트 목표
 
@@ -140,7 +140,7 @@ DRY_RUN은 KIS reconciliation을 사용하지 않지만, **Risk Manager 자체�
 - 일회성 DRY_RUN 자동 패치 Workflow 제거
 - 실제 소스 변경이 `main`에 반영된 이후 불필요한 자동 패치 경로 제거
 
-### 2026-09-15 버그 수정 / 리팩토링 (커밋 전)
+### `96b0a0e` — 2026-09-15 버그 수정 / 리팩토링
 
 배포된 Worker를 실측해 확인한 문제와 코드 검토로 찾은 문제를 함께 수정했다.
 
@@ -160,21 +160,25 @@ DRY_RUN은 KIS reconciliation을 사용하지 않지만, **Risk Manager 자체�
 
 ## 7. 검증 상태
 
-최근 DRY_RUN 분리 변경에 대한 Quote Worker Actions Run은 테스트 단계가 성공했고 배포 단계까지 진행되었다.
+로컬 검증(`96b0a0e` 기준):
 
-- Actions Run: `34894000395`
-- Test job: 성공
-- Deploy job: 배포 진행 확인
+| 항목 | 결과 |
+|---|---|
+| Worker `npm run check` | 통과 (도입 전 14개 타입 오류) |
+| Worker `npm test` | 17 파일 / 86 테스트 통과 |
+| 프론트 `npm run check` / `npm run build` | 통과 |
 
-다만 실제 브라우저에서 장외시간 DRY_RUN 주문을 직접 실행하는 외부 런타임 검증은 아직 별도 확인이 필요하다.
+`96b0a0e`는 아직 push/배포 전이다. 배포 전 실측(2026-09-15)에서는 `OPTIONS` preflight 500, `/risk` CORS 누락, `/dry-run` `allow-origin: *`, `asOf` 항상 빈 문자열을 확인했다. 배포 후 로드맵 1순위의 실측 항목으로 재확인해야 한다.
 
 ## 8. 아직 남은 작업
 
 ### 최우선
 
-1. DRY_RUN 장외시간 실제 엔드포인트 호출 검증
-2. DRY_RUN 성공/거부/kill-switch/risk-limit 회귀 검증
-3. PAPER 주문 안정성 검증
+1. `96b0a0e` push → Deploy Workflow(check → test → deploy) 성공 확인
+2. 배포된 Worker에서 `OPTIONS` 204, `/risk`·`/dry-run` CORS 헤더, Pages UI DRY_RUN 주문 성공/멱등/kill-switch 거부 실측
+3. 내부 포지션 동기화 정책 결정 및 구현 (현재 보유종목이 있으면 reconciliation 항상 `MISMATCHED`)
+4. `dailyLoss` 산출 추가 (일일 손실 한도 실효화)
+5. PAPER 주문 안정성 검증
 
 ### Phase 7
 
@@ -195,7 +199,15 @@ DRY_RUN은 KIS reconciliation을 사용하지 않지만, **Risk Manager 자체�
 - 실계좌 매매 게이트
 - 운영 안정화 및 실거래 전 체크리스트
 
-## 9. 안전 원칙
+## 9. 알려진 한계
+
+- 내부 포지션을 KIS 계좌로 갱신하는 경로가 없다.
+- `dailyLoss`가 계산되지 않아 일일 손실 한도가 동작하지 않는다.
+- PAPER 취소는 접수 응답만으로 `CANCELED` 처리하며, 취소 전 체결 경합은 자동 복구되지 않는다.
+- `market-session.ts`는 KRX 휴장일을 반영하지 않는다.
+- 자세한 내용은 `docs/design.md` §11.
+
+## 10. 안전 원칙
 
 - 실제 LIVE 주문 POST는 아직 수행하지 않는다.
 - DRY_RUN 수정 때문에 LIVE/PAPER 안전장치를 약화하지 않는다.
