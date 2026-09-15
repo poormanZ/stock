@@ -10,7 +10,7 @@ import { CANCELLABLE_STATUSES, createOrder, isValidOrderRequest, transitionOrder
 import { checkNewOrderGate } from './order-gate';
 import { resyncPaperOrders } from './paper-order-reconciliation';
 import { checkRisk, DEFAULT_RISK_CONFIG } from './risk-manager';
-import { applyInternalOrder, INTERNAL_STATE_UNAVAILABLE, readInternalState, readKillSwitch } from './state-clients';
+import { applyInternalOrder, INTERNAL_STATE_UNAVAILABLE, readInternalState, readKillSwitch, syncInternalPositions } from './state-clients';
 
 /** PAPER 주문 경로 공통 선행 조건: PAPER 환경, 계좌 설정, (주문/취소는) 정규장 시간 */
 function paperPrecheck(env: Env, origin: string, requireOpenMarket: boolean): Response | null {
@@ -152,6 +152,33 @@ export async function handlePaperCancel({ request, env, origin }: RouteContext):
     }
     if (error instanceof KISHttpError || isInternalStateUnavailable(error)) return errorResponse(error, origin, 'RECONCILIATION');
     return json({ error: 'PAPER_ORDER_CANCEL_UNKNOWN', message: errorMessage(error) }, 502, origin);
+  }
+}
+
+/**
+ * Explicit position synchronization: KIS PAPER holdings are copied into internal state.
+ * This is deliberately separate from the order path so an unexpected broker position never gets silently overwritten.
+ */
+export async function handlePaperPositionSync({ env, origin }: RouteContext): Promise<Response> {
+  const blocked = paperPrecheck(env, origin, false);
+  if (blocked) return blocked;
+
+  try {
+    const account = await createAccountAdapter(env).getSnapshot();
+    const previous = await readInternalState(env);
+    const positions = account.positions.map(({ symbol, quantity }) => ({ symbol, quantity }));
+    const state = await syncInternalPositions(env, positions);
+    return json({
+      asOf: new Date().toISOString(),
+      environment: getEnvironment(env),
+      source: account.source,
+      previousPositions: previous.positions,
+      positions: state.positions,
+      positionCount: state.positions.length,
+      syncedAt: state.updatedAt,
+    }, 200, origin);
+  } catch (error) {
+    return errorResponse(error, origin, 'POSITION_SYNC');
   }
 }
 
