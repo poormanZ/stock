@@ -26,7 +26,7 @@
 - [x] PAPER 주문도 reconciliation Gate + Risk Manager 통과
 - [x] PAPER 주문 clientOrderId 멱등성 및 UNKNOWN 상태 처리
 - [x] Worker 타입체크(`tsc` + `@cloudflare/workers-types`) 및 라우터/HTTP 클라이언트 테스트
-- [ ] 수정된 CORS preflight / PAPER 위험검사 경로 배포 후 실측 검증
+- [x] 수정된 CORS preflight / PAPER 위험검사 경로 배포 후 실측 검증
 - [ ] 모의투자 주문 안정성 검증
 - [ ] 전략/백테스트
 - [ ] 실계좌 주문
@@ -151,19 +151,21 @@
 
 ## 현재 다음 작업
 
-### 1순위 — 배포 후 실측 검증
+### 완료 — 배포 후 실측 검증
 
-2026-09-15 실측에서 배포된 Worker의 `OPTIONS` preflight가 500을 반환해 GitHub Pages UI의 모든 POST가 차단되고 있었고, `/risk` 응답에 CORS 헤더가 없었다. 수정 커밋(`96b0a0e`) 배포 후 다음을 확인한다.
+2026-09-15 배포 후 실측에서 수정된 CORS preflight / 위험검사 경로를 확인했다. 다음 항목이 모두 완료되었다.
 
-1. `curl -X OPTIONS -H 'Origin: https://poormanz.github.io' -H 'Access-Control-Request-Method: POST' <worker>/dry-run/orders` → 204 + `access-control-allow-origin`
-2. `GET /risk`, `GET /dry-run` → `access-control-allow-origin: https://poormanz.github.io`
-3. Pages UI에서 장외시간 DRY_RUN 주문 성공, 동일 주문 재전송 시 멱등 응답, Kill Switch 활성화 시 `KILL_SWITCH_ACTIVE` 거부
+1. `OPTIONS /dry-run/orders` preflight 정상 응답 및 `access-control-allow-origin` 확인
+2. `GET /risk`, `GET /dry-run`의 GitHub Pages Origin CORS 헤더 확인
+3. Pages UI에서 장외시간 DRY_RUN 주문 성공 확인
+4. 동일 `clientOrderId` 재전송 시 멱등 처리 확인
+5. Kill Switch 활성화 시 `KILL_SWITCH_ACTIVE` 거부 확인
 
-### 1.5순위 — 내부 포지션 동기화 정책 결정
+### 1순위 — 내부 포지션 동기화 정책 결정 및 구현
 
-내부 포지션을 KIS 계좌로 갱신하는 경로가 없어, 계좌에 보유종목이 있으면 reconciliation이 항상 `MISMATCHED`이고 PAPER 신규 주문 Gate가 닫힌다. 체결 기반 갱신과 KIS 스냅샷 채택 중 정책을 정한 뒤 구현해야 PAPER 안정성 검증을 시작할 수 있다. 같은 단계에서 `dailyLoss` 산출(체결 기반 실현손익)을 추가해 일일 손실 한도를 실효화한다.
+현재 내부 포지션을 KIS 계좌로 갱신하는 경로가 없어, 계좌에 보유종목이 있으면 reconciliation이 `MISMATCHED`가 되고 PAPER 신규 주문 Gate가 닫힌다. 체결 기반 갱신과 KIS 스냅샷 채택 중 정책을 정한 뒤 구현해야 PAPER 안정성 검증을 시작할 수 있다. 같은 단계에서 `dailyLoss` 산출(체결 기반 실현손익)을 추가해 일일 손실 한도를 실효화한다.
 
-### 2순위 — Phase 7 PAPER 주문 안정성 검증
+### 2순위 — PAPER 주문 안정성 검증
 
 PAPER 신규 주문은 한국시간(KST) 기준 평일 09:00~15:30 정규장에만 전송되도록 Worker 단계에서 차단한다. 주말과 장외 시간에는 KIS 주문 API까지 요청하지 않고 `MARKET_SESSION_CLOSED`를 반환한다. `/paper/reconcile`는 장외에서도 상태 복구를 위해 계속 호출할 수 있다.
 
