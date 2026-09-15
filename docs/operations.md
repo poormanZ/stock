@@ -67,6 +67,8 @@ echo 'VITE_QUOTE_API_BASE_URL=http://localhost:8787' > .env.local && npm run dev
 STOPPED ─configure→ READY ─start→ RUNNING ─stop→ STOPPED
 RUNNING ─(사이클 오류)→ ERROR ─start→ RUNNING
 RUNNING ─(Kill Switch)→ EMERGENCY_STOP ─(Kill Switch 해제 후 start)→ RUNNING
+  * EMERGENCY_STOP에서 start는 라우트가 Kill Switch 해제를 확인한 뒤 DO에 acknowledgeEmergencyStop을 붙여 보낸다.
+    Kill Switch가 켜져 있으면 409 KILL_SWITCH_ACTIVE.
 ```
 
 | 작업 | 호출 |

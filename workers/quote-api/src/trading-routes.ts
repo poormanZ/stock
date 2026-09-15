@@ -43,9 +43,10 @@ export async function handleTradingStart({ request, env, origin }: RouteContext)
     if ('error' in parsed) return json({ error: 'INVALID_TRADING_CONFIG', reason: parsed.error }, 400, origin);
     config = parsed.config;
   }
-  // Kill Switch가 켜진 상태에서 시작하면 다음 사이클에 EMERGENCY_STOP으로 바뀔 뿐이므로 처음부터 거부한다
+  // Kill Switch가 켜진 상태에서 시작하면 다음 사이클에 EMERGENCY_STOP으로 바뀔 뿐이므로 처음부터 거부한다.
+  // 꺼져 있음을 여기서 확인했으므로 EMERGENCY_STOP 상태에서의 재시작을 DO에 명시적으로 허용한다.
   if ((await readKillSwitch(env)).active) return json({ error: 'KILL_SWITCH_ACTIVE' }, 409, origin);
-  const response = await postTradingCommand(env, config ? { action: 'start', config } : { action: 'start' });
+  const response = await postTradingCommand(env, { action: 'start', acknowledgeEmergencyStop: true, ...(config ? { config } : {}) });
   if (response.ok) {
     const state = (await response.clone().json()) as TradingState;
     await appendAudit(env, { type: 'SCHEDULER_RUN', mode: state.config?.mode ?? 'DRY_RUN', message: 'trading started' });

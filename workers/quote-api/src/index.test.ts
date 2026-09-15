@@ -164,6 +164,17 @@ describe('trading routes', () => {
     expect(await manual.json()).toEqual({ ran: false, reason: 'NOT_RUNNING' });
   });
 
+  it('resumes from EMERGENCY_STOP through the route once the kill switch is off', async () => {
+    const trading = namespace(async (request) => {
+      if (request.method === 'GET') return Response.json({ status: 'EMERGENCY_STOP', config: null, runs: [], updatedAt: '' });
+      const body = await request.json() as { action: string; acknowledgeEmergencyStop?: boolean };
+      return Response.json({ status: body.acknowledgeEmergencyStop ? 'RUNNING' : 'EMERGENCY_STOP', action: body.action, config: { mode: 'DRY_RUN' } });
+    });
+    const response = await app.fetch(post('/trading/start', {}), makeEnv({ TRADING_STATE_STORE: trading.ns }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: 'RUNNING', action: 'start' });
+  });
+
   it('refuses to start the engine while the kill switch is active', async () => {
     const trading = namespace(() => Response.json({ status: 'READY', config: null, runs: [], updatedAt: '' }));
     const env = makeEnv({ TRADING_STATE_STORE: trading.ns, RISK_STATE_STORE: namespace(() => Response.json({ active: true, updatedAt: '', liveArm: null })).ns });

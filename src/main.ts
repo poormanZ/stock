@@ -193,12 +193,13 @@ function tradingPanel(): string {
   const lastText = last
     ? `${time(last.startedAt)} · ${last.trigger} · ${esc(last.status)}${last.reason ? ` (${esc(last.reason)})` : ''}${last.error ? ` · ${esc(last.error.source)}: ${esc(last.error.message)}` : ''} · 신호 ${last.signals.filter((sg) => sg.action !== 'hold').length} · 주문 ${last.orders.length}`
     : '실행 이력 없음';
-  const canStart = live && !busy && status !== 'RUNNING' && status !== 'EMERGENCY_STOP' && !killSwitch?.active;
+  // EMERGENCY_STOP은 Kill Switch가 해제된 뒤에만 다시 시작할 수 있다
+  const canStart = live && !busy && status !== 'RUNNING' && !killSwitch?.active;
   return `<div class="panel"><div class="section-title"><div><p class="eyebrow">AUTO TRADING / ${esc(cfg?.mode ?? 'DRY_RUN')}</p><h2>자동매매 엔진</h2></div><span class="gate ${tone}">${esc(status)}</span></div>
     <div class="order-preview"><span>전략 <b>${cfg ? `${esc(cfg.strategy.id)} ${esc(JSON.stringify(cfg.strategy.params))}` : '—'}</b></span><span>종목 <b>${cfg ? esc(cfg.symbols.join(', ')) : '—'}</b></span><span>최근 실행 <b>${lastText}</b></span>${trading?.error ? `<span>오류 <b>${esc(trading.error)}</b></span>` : ''}</div>
-    <div class="segmented"><button id="trading-start" ${canStart ? '' : 'disabled'}>DRY_RUN 시작</button><button id="trading-stop" ${live && !busy && status === 'RUNNING' ? '' : 'disabled'}>정지</button></div>
+    <div class="segmented"><button id="trading-start" ${canStart ? '' : 'disabled'}>${status === 'EMERGENCY_STOP' ? 'EMERGENCY_STOP 해제 후 재시작' : status === 'ERROR' ? 'ERROR 확인 후 재시작' : 'DRY_RUN 시작'}</button><button id="trading-stop" ${live && !busy && status === 'RUNNING' ? '' : 'disabled'}>정지</button></div>
     <div class="segmented"><button id="trading-run" ${live && !busy && status === 'RUNNING' ? '' : 'disabled'}>지금 1회 실행</button><button id="kill-switch" class="${killSwitch?.active ? '' : 'active'}" ${live && !busy ? '' : 'disabled'}>${killSwitch?.active ? 'KILL SWITCH 해제' : 'KILL SWITCH'}</button></div>
-    <p class="message">PAPER/LIVE 자동 실행은 대시보드에서 시작하지 않습니다. 스케줄은 KST 평일 09:00~15:59 5분 간격입니다.</p></div>`;
+    <p class="message">${status === 'EMERGENCY_STOP' && killSwitch?.active ? 'Kill Switch를 먼저 해제해야 재시작할 수 있습니다. ' : ''}PAPER/LIVE 자동 실행은 대시보드에서 시작하지 않습니다. 스케줄은 KST 평일 09:00~15:59 5분 간격입니다.</p></div>`;
 }
 
 function auditRows(): string {

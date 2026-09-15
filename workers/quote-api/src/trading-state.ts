@@ -48,7 +48,8 @@ export interface TradingState {
 
 export type TradingCommand =
   | { action: 'configure'; config: unknown }
-  | { action: 'start'; config?: unknown }
+  /** EMERGENCY_STOP에서의 재시작은 호출자가 Kill Switch 해제를 확인했다는 표시(acknowledgeEmergencyStop)가 있어야 한다 */
+  | { action: 'start'; config?: unknown; acknowledgeEmergencyStop?: boolean }
   | { action: 'stop' }
   | { action: 'acquire-lease'; runId: string; ttlMs: number }
   | { action: 'release-lease'; runId: string }
@@ -107,7 +108,9 @@ export class TradingStateStoreDO {
         case 'start': {
           const config = body.config !== undefined ? validateTradingConfig(body.config) : current.config;
           if (!config) return Response.json({ error: 'TRADING_NOT_CONFIGURED' }, { status: 409 });
-          if (current.status === 'EMERGENCY_STOP') return Response.json({ error: 'EMERGENCY_STOP_ACTIVE', status: current.status }, { status: 409 });
+          if (current.status === 'EMERGENCY_STOP' && body.acknowledgeEmergencyStop !== true) {
+            return Response.json({ error: 'EMERGENCY_STOP_ACTIVE', status: current.status }, { status: 409 });
+          }
           return this.persist({ ...current, config, status: 'RUNNING', error: undefined }, now);
         }
         case 'stop':

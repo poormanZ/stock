@@ -53,5 +53,9 @@ describe('trading state', () => {
     const stopped = (await (await post(store, { action: 'record-run', run: run('x'), nextStatus: 'EMERGENCY_STOP', error: 'kill switch' })).json()) as TradingState;
     expect(stopped).toMatchObject({ status: 'EMERGENCY_STOP', error: 'kill switch' });
     expect((await post(store, { action: 'start' })).status).toBe(409);
+    // 라우트가 Kill Switch 해제를 확인한 뒤에만 보내는 명시적 확인으로 재시작한다
+    const resumed = (await (await post(store, { action: 'start', acknowledgeEmergencyStop: true })).json()) as TradingState;
+    expect(resumed.status).toBe('RUNNING');
+    expect(resumed.error).toBeUndefined();
   });
 });
