@@ -12,6 +12,7 @@
 | Worker 테스트 | `cd workers/quote-api && npm test` | KIS 실호출 없음. `fetch`/DO는 stub |
 | 프론트 타입체크·빌드 | `npm run check && npm run build` | |
 | 프론트 테스트 | `npm test` | `src/` 하위만 실행 |
+| Worker 로컬 실행 | `cd workers/quote-api && npm run dev` | `.dev.vars` 필요(`.dev.vars.example` 참고). `dev:paper`는 PAPER 환경 |
 
 CI(`deploy-worker.yml`)는 check → test → deploy 순서로 같은 명령을 실행한다.
 

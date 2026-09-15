@@ -53,7 +53,12 @@ cd workers/quote-api
 npm install
 npm run check        # 타입체크 (@cloudflare/workers-types)
 npm test             # vitest, KIS 실호출 없음
+cp .dev.vars.example .dev.vars   # APP_KEY 등 로컬 Secret 입력 (gitignore됨)
+npm run dev          # http://localhost:8787, ALLOWED_ORIGIN=http://localhost:5173
+npm run dev:paper    # 모의투자 키로 KIS_ENVIRONMENT=PAPER 실행
 ```
+
+프론트에서 로컬 Worker를 쓰려면 루트에 `.env.local`을 만들고 `VITE_QUOTE_API_BASE_URL=http://localhost:8787`을 넣은 뒤 `npm run dev`를 실행한다. 배포된 Worker는 `ALLOWED_ORIGIN`이 GitHub Pages 도메인으로 고정되어 `localhost`에서 직접 호출할 수 없다. 로컬 Worker의 KV/Durable Object는 `.wrangler/state/`에 저장되며 운영 상태와 분리된다.
 
 배포는 GitHub Actions가 수행한다. `deploy-worker.yml`은 check → test → wrangler deploy, `deploy-pages.yml`은 test → build → Pages 배포 순서다.
 
