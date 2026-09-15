@@ -32,6 +32,19 @@ describe('InternalStateStore', () => {
     expect((await store.get()).positions[0].quantity).toBe(2);
   });
 
+  it('recovers persisted state after a store instance is recreated', async () => {
+    const storage = stateStub();
+    const firstStore = new InternalStateStore(storage);
+    await firstStore.applyOrder(order);
+    await firstStore.syncPositions([{ symbol: '005930', quantity: 7 }]);
+
+    const recoveredStore = new InternalStateStore(storage);
+    const recovered = await recoveredStore.get();
+    expect(recovered.positions).toEqual([{ symbol: '005930', quantity: 7 }]);
+    expect(recovered.orders).toEqual([expect.objectContaining({ brokerOrderId: 'broker-1', clientOrderId: 'client-1' })]);
+    expect(recovered.orderRecords).toEqual([order]);
+  });
+
   it('syncs a broker position snapshot without deleting the order ledger', async () => {
     const store = new InternalStateStore(stateStub());
     await store.applyOrder(order);
@@ -39,6 +52,17 @@ describe('InternalStateStore', () => {
     expect(saved.positions).toEqual([{ symbol: '005930', quantity: 7 }, { symbol: '000660', quantity: 3 }]);
     expect(saved.orderRecords).toEqual([order]);
     expect(saved.orders).toEqual([expect.objectContaining({ brokerOrderId: 'broker-1' })]);
+  });
+
+  it('repeating the same position snapshot does not duplicate the order ledger', async () => {
+    const store = new InternalStateStore(stateStub());
+    await store.applyOrder(order);
+    await store.syncPositions([{ symbol: '005930', quantity: 7 }]);
+    const saved = await store.syncPositions([{ symbol: '005930', quantity: 7 }]);
+    expect(saved.positions).toEqual([{ symbol: '005930', quantity: 7 }]);
+    expect(saved.orders).toHaveLength(1);
+    expect(saved.orderRecords).toHaveLength(1);
+    expect(saved.orderRecords?.[0].clientOrderId).toBe('client-1');
   });
 
   it('persists orderRecords including clientOrderId for idempotency', async () => {
